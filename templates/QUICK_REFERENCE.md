@@ -75,7 +75,7 @@ except Exception as e:
 ### Setup
 ```bash
 # Install
-pip install -r requirements.txt
+uv pip install -r requirements.txt  # or: pip install -r requirements.txt
 
 # Configure
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
@@ -396,7 +396,7 @@ python main.py
 streamlit run app.py
 
 # Install requirements
-pip install -r requirements.txt
+uv pip install -r requirements.txt  # or: pip install -r requirements.txt
 
 # Check syntax
 python -m py_compile main.py

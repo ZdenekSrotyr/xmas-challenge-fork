@@ -484,7 +484,7 @@ python main.py  # Test it works
 # For Streamlit
 cp -r templates/streamlit-app my-app
 cd my-app
-pip install -r requirements.txt
+uv pip install -r requirements.txt  # or: pip install -r requirements.txt
 streamlit run app.py
 ```
 

@@ -130,7 +130,7 @@ if [ "$TEMPLATE" == "custom-python" ]; then
 
 elif [ "$TEMPLATE" == "streamlit-app" ]; then
     echo "  1. cd $PROJECT_DIR"
-    echo "  2. pip install -r requirements.txt"
+    echo "  2. uv pip install -r requirements.txt  # or: pip install -r requirements.txt"
     echo "  3. Copy .streamlit/secrets.toml.example to .streamlit/secrets.toml"
     echo "  4. Add your Keboola Storage token to secrets.toml"
     echo "  5. Run: streamlit run app.py"

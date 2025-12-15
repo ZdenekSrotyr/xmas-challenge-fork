@@ -60,7 +60,7 @@ cp templates/custom-python/main.py your-transformation/
 ```bash
 # Install dependencies
 cd templates/streamlit-app
-pip install -r requirements.txt
+uv pip install -r requirements.txt  # or: pip install -r requirements.txt
 
 # Set up credentials
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
@@ -304,7 +304,7 @@ Create team-specific documentation:
 
 1. **Check dependencies**:
    ```bash
-   pip install -r requirements.txt
+   uv pip install -r requirements.txt  # or: pip install -r requirements.txt
    ```
 
 2. **Verify Python version**:

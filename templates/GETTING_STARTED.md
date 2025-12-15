@@ -75,7 +75,7 @@ cp -r streamlit-app my-dashboard
 cd my-dashboard
 
 # Step 2: Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt  # or: pip install -r requirements.txt
 
 # Step 3: Set up credentials
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
@@ -308,7 +308,7 @@ Try this now:
 cd templates/streamlit-app
 
 # 2. Install requirements
-pip install -r requirements.txt
+uv pip install -r requirements.txt  # or: pip install -r requirements.txt
 
 # 3. Set a dummy token (to see the UI)
 mkdir -p .streamlit

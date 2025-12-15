@@ -18,6 +18,10 @@ This template provides a fully functional Streamlit app that:
 ### 1. Install Requirements
 
 ```bash
+# Using uv (recommended - much faster)
+uv pip install -r requirements.txt
+
+# Or using pip
 pip install -r requirements.txt
 ```
 
@@ -147,8 +151,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install uv for faster dependency installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN uv pip install --system -r requirements.txt
 
 COPY app.py .
 
