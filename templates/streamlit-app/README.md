@@ -17,8 +17,18 @@ This template provides a fully functional Streamlit app that:
 
 ### 1. Install Requirements
 
+**Option A: Using pyproject.toml (recommended - modern Python standard)**
 ```bash
-# Using uv (recommended - much faster)
+# Using uv (fastest)
+uv sync
+
+# Or using pip
+pip install -e .
+```
+
+**Option B: Using requirements.txt (traditional)**
+```bash
+# Using uv
 uv pip install -r requirements.txt
 
 # Or using pip

@@ -60,7 +60,9 @@ cp templates/custom-python/main.py your-transformation/
 ```bash
 # Install dependencies
 cd templates/streamlit-app
-uv pip install -r requirements.txt  # or: pip install -r requirements.txt
+uv sync  # modern way using pyproject.toml
+# or: uv pip install -r requirements.txt  # traditional way
+# or: pip install -r requirements.txt  # using pip
 
 # Set up credentials
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
