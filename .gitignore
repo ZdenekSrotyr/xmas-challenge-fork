@@ -53,9 +53,9 @@ ENV/
 # Metrics output
 scripts/metrics/output/
 scripts/metrics/data/archive/
-*.html
-*.json
-*.csv
+scripts/metrics/**/*.html
+scripts/metrics/**/*.json
+scripts/metrics/**/*.csv
 
 # Logs
 *.log

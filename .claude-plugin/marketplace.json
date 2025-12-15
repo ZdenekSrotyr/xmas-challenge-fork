@@ -1,0 +1,40 @@
+{
+  "name": "keboola-ai-kit",
+  "version": "1.0.0",
+  "description": "Complete self-healing knowledge system for Claude Code + Keboola with AI-powered error reporting and continuous improvement",
+  "author": "Zdenek Srotyr",
+  "repository": "https://github.com/ZdenekSrotyr/xmas-challenge-fork",
+  "homepage": "https://github.com/ZdenekSrotyr/xmas-challenge-fork#readme",
+  "keywords": [
+    "keboola",
+    "data-platform",
+    "storage-api",
+    "jobs-api",
+    "components",
+    "orchestration",
+    "self-healing",
+    "ai-powered"
+  ],
+  "plugins": [
+    {
+      "name": "keboola-core",
+      "path": "plugins/keboola-core",
+      "description": "Core Keboola platform knowledge - Storage API, Jobs API, Custom Python, Flows"
+    },
+    {
+      "name": "developer",
+      "path": "plugins/developer",
+      "description": "Developer toolkit with specialized agents for code review and security analysis"
+    },
+    {
+      "name": "component-developer",
+      "path": "plugins/component-developer",
+      "description": "Build production-ready Keboola Python components"
+    },
+    {
+      "name": "dataapp-developer",
+      "path": "plugins/dataapp-developer",
+      "description": "Build Streamlit data apps for Keboola"
+    }
+  ]
+}
