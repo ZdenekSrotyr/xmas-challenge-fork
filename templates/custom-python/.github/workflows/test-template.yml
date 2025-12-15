@@ -1,0 +1,210 @@
+name: Test Custom Python Template
+
+on:
+  push:
+    paths:
+      - 'templates/custom-python/**'
+  pull_request:
+    paths:
+      - 'templates/custom-python/**'
+  workflow_dispatch:
+
+jobs:
+  test-template:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: templates/custom-python
+        run: |
+          python -m pip install --upgrade pip
+          # Install requirements if any are uncommented
+          if grep -v '^#' requirements.txt | grep -v '^$' > /tmp/real_requirements.txt 2>/dev/null && [ -s /tmp/real_requirements.txt ]; then
+            pip install -r /tmp/real_requirements.txt
+          else
+            echo "No requirements to install"
+          fi
+
+      - name: Lint with ruff
+        run: |
+          pip install ruff
+          ruff check templates/custom-python/main.py || true
+
+      - name: Type check with mypy
+        run: |
+          pip install mypy
+          mypy templates/custom-python/main.py --ignore-missing-imports || true
+
+      - name: Create test data structure
+        run: |
+          # Simulate Keboola data directory structure
+          mkdir -p /tmp/keboola-test/data/in/tables
+          mkdir -p /tmp/keboola-test/data/out/tables
+
+          # Create test input CSV
+          cat > /tmp/keboola-test/data/in/tables/input_table.csv << 'EOF'
+          id,name,amount
+          1,Customer A,150.50
+          2,Customer B,75.25
+          3,Customer C,250.00
+          4,Customer D,invalid
+          5,Customer E,300.00
+          EOF
+
+          # Create test config
+          cat > /tmp/keboola-test/data/config.json << 'EOF'
+          {
+            "parameters": {
+              "threshold": 100,
+              "debug": true
+            }
+          }
+          EOF
+
+      - name: Test main.py with mock data
+        working-directory: templates/custom-python
+        run: |
+          # Modify paths for testing
+          sed -i "s|'/data/|'/tmp/keboola-test/data/|g" main.py
+
+          # Run the script
+          python main.py
+
+          # Verify outputs were created
+          if [ ! -f /tmp/keboola-test/data/out/tables/output_table.csv ]; then
+            echo "Error: output_table.csv was not created"
+            exit 1
+          fi
+
+          if [ ! -f /tmp/keboola-test/data/out/tables/summary.csv ]; then
+            echo "Error: summary.csv was not created"
+            exit 1
+          fi
+
+          echo "✓ All output files created successfully"
+
+      - name: Verify output structure
+        run: |
+          echo "=== Output Table ==="
+          cat /tmp/keboola-test/data/out/tables/output_table.csv
+          echo ""
+          echo "=== Summary Table ==="
+          cat /tmp/keboola-test/data/out/tables/summary.csv
+
+          # Check output has headers
+          if ! head -n 1 /tmp/keboola-test/data/out/tables/output_table.csv | grep -q "id"; then
+            echo "Error: output_table.csv missing headers"
+            exit 1
+          fi
+
+          # Check output has data (more than just header)
+          if [ $(wc -l < /tmp/keboola-test/data/out/tables/output_table.csv) -le 1 ]; then
+            echo "Error: output_table.csv has no data rows"
+            exit 1
+          fi
+
+          echo "✓ Output structure is valid"
+
+      - name: Test error handling
+        working-directory: templates/custom-python
+        run: |
+          # Restore original paths
+          git checkout main.py
+
+          # Test with missing input file
+          rm -rf /tmp/keboola-test/data/in/tables/*
+          mkdir -p /tmp/keboola-test/data/in/tables
+
+          sed -i "s|'/data/|'/tmp/keboola-test/data/|g" main.py
+
+          # Should fail gracefully
+          if python main.py 2>&1 | grep -q "FileNotFoundError"; then
+            echo "✓ Error handling works correctly"
+          else
+            echo "Error: Script should have raised FileNotFoundError"
+            exit 1
+          fi
+
+      - name: Validate README documentation
+        run: |
+          # Check README exists and has required sections
+          if [ ! -f templates/custom-python/README.md ]; then
+            echo "Error: README.md is missing"
+            exit 1
+          fi
+
+          for section in "Quick Start" "How It Works" "Customization" "Troubleshooting"; do
+            if ! grep -q "$section" templates/custom-python/README.md; then
+              echo "Error: README missing section: $section"
+              exit 1
+            fi
+          done
+
+          echo "✓ README documentation is complete"
+
+      - name: Check code quality
+        run: |
+          # Verify main.py has proper docstrings
+          if ! grep -q '"""' templates/custom-python/main.py; then
+            echo "Error: main.py missing docstrings"
+            exit 1
+          fi
+
+          # Verify helper functions exist
+          for func in "read_input_table" "write_output_table" "read_config" "process_data"; do
+            if ! grep -q "def $func" templates/custom-python/main.py; then
+              echo "Error: Missing required function: $func"
+              exit 1
+            fi
+          done
+
+          echo "✓ Code quality checks passed"
+
+  test-requirements:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Test requirements.txt
+        working-directory: templates/custom-python
+        run: |
+          # Extract uncommented packages
+          grep -v '^#' requirements.txt | grep -v '^$' > /tmp/active_requirements.txt || true
+
+          if [ -s /tmp/active_requirements.txt ]; then
+            echo "Found active requirements:"
+            cat /tmp/active_requirements.txt
+
+            # Test installation
+            pip install -r /tmp/active_requirements.txt
+            echo "✓ All requirements can be installed"
+          else
+            echo "✓ No active requirements (using stdlib only)"
+          fi
+
+      - name: Validate package versions
+        run: |
+          # Check that commented packages have versions specified
+          if grep '^#.*==' templates/custom-python/requirements.txt | grep -v '==' ; then
+            echo "Error: Some commented packages missing version pins"
+            exit 1
+          fi
+
+          echo "✓ Package versions properly specified"

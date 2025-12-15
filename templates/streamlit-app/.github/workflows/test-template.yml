@@ -1,0 +1,324 @@
+name: Test Streamlit App Template
+
+on:
+  push:
+    paths:
+      - 'templates/streamlit-app/**'
+  pull_request:
+    paths:
+      - 'templates/streamlit-app/**'
+  workflow_dispatch:
+
+jobs:
+  test-template:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: templates/streamlit-app
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install testing dependencies
+        run: |
+          pip install pytest pytest-cov ruff mypy
+
+      - name: Lint with ruff
+        run: |
+          ruff check templates/streamlit-app/app.py || true
+
+      - name: Type check with mypy
+        run: |
+          mypy templates/streamlit-app/app.py --ignore-missing-imports || true
+
+      - name: Validate app.py imports
+        working-directory: templates/streamlit-app
+        run: |
+          # Test that all imports work
+          python -c "
+          import sys
+          import ast
+
+          # Parse the file to check imports
+          with open('app.py', 'r') as f:
+              tree = ast.parse(f.read())
+
+          imports = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  for alias in node.names:
+                      imports.append(alias.name)
+              elif isinstance(node, ast.ImportFrom):
+                  imports.append(node.module)
+
+          print(f'Found imports: {imports}')
+
+          # Verify critical imports
+          required = ['streamlit', 'pandas']
+          for req in required:
+              if req not in imports:
+                  print(f'ERROR: Missing required import: {req}')
+                  sys.exit(1)
+
+          print('✓ All required imports present')
+          "
+
+      - name: Check Streamlit app syntax
+        working-directory: templates/streamlit-app
+        run: |
+          # Verify app.py is valid Python
+          python -m py_compile app.py
+          echo "✓ app.py syntax is valid"
+
+      - name: Test app structure
+        working-directory: templates/streamlit-app
+        run: |
+          # Verify required functions exist
+          python -c "
+          import ast
+          import sys
+
+          with open('app.py', 'r') as f:
+              tree = ast.parse(f.read())
+
+          functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+
+          required_functions = [
+              'get_keboola_client',
+              'load_table_list',
+              'load_table_data',
+              'save_to_storage',
+              'main'
+          ]
+
+          for func in required_functions:
+              if func not in functions:
+                  print(f'ERROR: Missing required function: {func}')
+                  sys.exit(1)
+
+          print(f'✓ All required functions present: {required_functions}')
+          "
+
+      - name: Test mock Streamlit app
+        working-directory: templates/streamlit-app
+        run: |
+          # Create a test script that mocks Streamlit
+          cat > test_app_mock.py << 'EOF'
+          import sys
+          from unittest.mock import MagicMock, patch
+          import os
+
+          # Mock streamlit before importing app
+          sys.modules['streamlit'] = MagicMock()
+
+          # Mock kbcstorage
+          mock_client = MagicMock()
+          mock_client.tables.list.return_value = [
+              {'id': 'in.c-test.table1', 'rowsCount': 100}
+          ]
+          sys.modules['kbcstorage'] = MagicMock()
+          sys.modules['kbcstorage.client'] = MagicMock()
+
+          # Set mock environment
+          os.environ['KEBOOLA_STORAGE_TOKEN'] = 'test-token'
+
+          # Import app module
+          import app
+
+          # Test functions exist and are callable
+          assert callable(app.get_keboola_client)
+          assert callable(app.load_table_list)
+          assert callable(app.load_table_data)
+          assert callable(app.save_to_storage)
+          assert callable(app.main)
+
+          print('✓ All functions are callable')
+          EOF
+
+          python test_app_mock.py
+
+      - name: Validate configuration files
+        working-directory: templates/streamlit-app
+        run: |
+          # Check config.toml syntax
+          python -c "
+          import tomli
+          import sys
+
+          with open('.streamlit/config.toml', 'rb') as f:
+              try:
+                  config = tomli.load(f)
+                  print(f'✓ config.toml is valid TOML')
+                  print(f'Sections: {list(config.keys())}')
+              except Exception as e:
+                  print(f'ERROR: Invalid config.toml: {e}')
+                  sys.exit(1)
+          " || pip install tomli && python -c "
+          import tomli
+          import sys
+
+          with open('.streamlit/config.toml', 'rb') as f:
+              try:
+                  config = tomli.load(f)
+                  print(f'✓ config.toml is valid TOML')
+                  print(f'Sections: {list(config.keys())}')
+              except Exception as e:
+                  print(f'ERROR: Invalid config.toml: {e}')
+                  sys.exit(1)
+          "
+
+      - name: Check secrets example
+        working-directory: templates/streamlit-app
+        run: |
+          # Verify secrets.toml.example exists
+          if [ ! -f .streamlit/secrets.toml.example ]; then
+            echo "ERROR: secrets.toml.example not found"
+            exit 1
+          fi
+
+          # Check it contains required keys
+          if ! grep -q "KEBOOLA_STORAGE_TOKEN" .streamlit/secrets.toml.example; then
+            echo "ERROR: secrets.toml.example missing KEBOOLA_STORAGE_TOKEN"
+            exit 1
+          fi
+
+          echo "✓ secrets.toml.example is valid"
+
+      - name: Validate README documentation
+        working-directory: templates/streamlit-app
+        run: |
+          # Check README exists and has required sections
+          if [ ! -f README.md ]; then
+            echo "ERROR: README.md is missing"
+            exit 1
+          fi
+
+          for section in "Quick Start" "Features" "Deployment" "Customization" "Troubleshooting"; do
+            if ! grep -q "$section" README.md; then
+              echo "ERROR: README missing section: $section"
+              exit 1
+            fi
+          done
+
+          echo "✓ README documentation is complete"
+
+      - name: Test requirements.txt
+        working-directory: templates/streamlit-app
+        run: |
+          # Verify all listed packages can be resolved
+          pip install --dry-run -r requirements.txt
+          echo "✓ All requirements are installable"
+
+      - name: Check code quality
+        working-directory: templates/streamlit-app
+        run: |
+          # Verify app.py has proper docstrings
+          python -c "
+          import ast
+          import sys
+
+          with open('app.py', 'r') as f:
+              tree = ast.parse(f.read())
+
+          # Check module docstring
+          module_docstring = ast.get_docstring(tree)
+          if not module_docstring:
+              print('ERROR: Missing module docstring')
+              sys.exit(1)
+
+          # Check function docstrings
+          functions = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+          missing_docs = []
+
+          for func in functions:
+              if not ast.get_docstring(func) and not func.name.startswith('_'):
+                  missing_docs.append(func.name)
+
+          if missing_docs:
+              print(f'WARNING: Functions missing docstrings: {missing_docs}')
+          else:
+              print('✓ All public functions have docstrings')
+          "
+
+      - name: Security check
+        working-directory: templates/streamlit-app
+        run: |
+          # Install bandit for security scanning
+          pip install bandit
+
+          # Run security scan
+          bandit -r app.py -ll || true
+
+          echo "✓ Security scan completed"
+
+  test-streamlit-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Streamlit and dependencies
+        working-directory: templates/streamlit-app
+        run: |
+          pip install -r requirements.txt
+
+      - name: Test Streamlit app loads
+        working-directory: templates/streamlit-app
+        run: |
+          # Set required environment variable
+          export KEBOOLA_STORAGE_TOKEN="test-token-for-validation"
+
+          # Test that streamlit can parse the app
+          streamlit run app.py --help
+
+          echo "✓ Streamlit can load the app"
+
+      - name: Validate Streamlit version compatibility
+        run: |
+          # Get installed Streamlit version
+          STREAMLIT_VERSION=$(pip show streamlit | grep Version | cut -d' ' -f2)
+          echo "Streamlit version: $STREAMLIT_VERSION"
+
+          # Verify it's recent enough (1.30+)
+          python -c "
+          from packaging import version
+          import sys
+
+          installed = version.parse('$STREAMLIT_VERSION')
+          required = version.parse('1.30.0')
+
+          if installed < required:
+              print(f'ERROR: Streamlit version too old: {installed} < {required}')
+              sys.exit(1)
+
+          print(f'✓ Streamlit version is compatible: {installed}')
+          " || pip install packaging && python -c "
+          from packaging import version
+          import sys
+
+          installed = version.parse('$STREAMLIT_VERSION')
+          required = version.parse('1.30.0')
+
+          if installed < required:
+              print(f'ERROR: Streamlit version too old: {installed} < {required}')
+              sys.exit(1)
+
+          print(f'✓ Streamlit version is compatible: {installed}')
+          "

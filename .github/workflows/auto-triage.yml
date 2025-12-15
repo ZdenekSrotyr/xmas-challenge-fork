@@ -1,0 +1,244 @@
+name: Auto-Triage Issues
+
+on:
+  issues:
+    types: [opened, labeled]
+
+# Only allow one triage workflow to run at a time to avoid race conditions
+concurrency:
+  group: auto-triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    # Only run if issue has the 'auto-report' label
+    if: contains(github.event.issue.labels.*.name, 'auto-report')
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install anthropic pyyaml requests
+
+      - name: Analyze issue with Claude
+        id: analyze
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import sys
+          from anthropic import Anthropic
+
+          # Initialize Claude client
+          client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+          # Get issue details from GitHub context
+          issue_title = """${{ github.event.issue.title }}"""
+          issue_body = """${{ github.event.issue.body }}"""
+          issue_number = "${{ github.event.issue.number }}"
+
+          # Prepare the analysis prompt
+          prompt = f"""Analyze this auto-reported issue from the Keboola AI knowledge base and provide a structured triage.
+
+          Issue Title: {issue_title}
+
+          Issue Body:
+          {issue_body}
+
+          Please analyze and respond with a JSON object (and ONLY the JSON object) containing:
+          1. category: One of "api-error", "outdated-docs", "pitfall", "other"
+          2. confidence: Integer from 0-100 indicating confidence in categorization
+          3. summary: Brief 1-2 sentence summary of the issue
+          4. recommended_labels: Array of relevant labels to add
+          5. priority: One of "high", "medium", "low"
+          6. reasoning: Brief explanation of the categorization
+
+          Consider:
+          - API errors: Issues with Keboola API calls, authentication, endpoints
+          - Outdated docs: Documentation that references deprecated features or wrong endpoints
+          - Pitfall: Common mistakes developers make that should be documented
+          - Other: Issues that don't fit the above categories
+
+          Respond with ONLY valid JSON, no markdown formatting."""
+
+          try:
+              # Call Claude API
+              message = client.messages.create(
+                  model="claude-sonnet-4-5-20250929",
+                  max_tokens=1024,
+                  messages=[
+                      {"role": "user", "content": prompt}
+                  ]
+              )
+
+              # Extract response
+              response_text = message.content[0].text.strip()
+
+              # Parse JSON response
+              analysis = json.loads(response_text)
+
+              # Validate required fields
+              required_fields = ["category", "confidence", "summary", "recommended_labels", "priority", "reasoning"]
+              if not all(field in analysis for field in required_fields):
+                  raise ValueError("Missing required fields in analysis")
+
+              # Output to GitHub Actions
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"category={analysis['category']}\n")
+                  f.write(f"confidence={analysis['confidence']}\n")
+                  f.write(f"summary={analysis['summary']}\n")
+                  f.write(f"labels={','.join(analysis['recommended_labels'])}\n")
+                  f.write(f"priority={analysis['priority']}\n")
+                  f.write(f"reasoning={analysis['reasoning']}\n")
+
+              print(f"Analysis complete: {analysis['category']} (confidence: {analysis['confidence']}%)")
+
+          except json.JSONDecodeError as e:
+              print(f"Error: Failed to parse Claude response as JSON: {e}", file=sys.stderr)
+              print(f"Response was: {response_text}", file=sys.stderr)
+              sys.exit(1)
+          except Exception as e:
+              print(f"Error during analysis: {e}", file=sys.stderr)
+              sys.exit(1)
+          EOF
+
+      - name: Add triage labels
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          CATEGORY: ${{ steps.analyze.outputs.category }}
+          LABELS: ${{ steps.analyze.outputs.labels }}
+          PRIORITY: ${{ steps.analyze.outputs.priority }}
+          CONFIDENCE: ${{ steps.analyze.outputs.confidence }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const category = process.env.CATEGORY;
+            const labelsStr = process.env.LABELS;
+            const priority = process.env.PRIORITY;
+            const confidence = process.env.CONFIDENCE;
+
+            // Parse labels
+            const labels = labelsStr ? labelsStr.split(',').filter(l => l.trim()) : [];
+
+            // Add category and priority labels
+            labels.push(`category:${category}`);
+            labels.push(`priority:${priority}`);
+            labels.push(`confidence:${confidence}`);
+
+            // Add labels to issue
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: labels
+            });
+
+            console.log(`Added labels: ${labels.join(', ')}`);
+
+      - name: Add triage comment
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          CATEGORY: ${{ steps.analyze.outputs.category }}
+          CONFIDENCE: ${{ steps.analyze.outputs.confidence }}
+          SUMMARY: ${{ steps.analyze.outputs.summary }}
+          PRIORITY: ${{ steps.analyze.outputs.priority }}
+          REASONING: ${{ steps.analyze.outputs.reasoning }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const category = process.env.CATEGORY;
+            const confidence = parseInt(process.env.CONFIDENCE);
+            const summary = process.env.SUMMARY;
+            const priority = process.env.PRIORITY;
+            const reasoning = process.env.REASONING;
+
+            // Create comment body
+            let commentBody = `## Auto-Triage Results\n\n`;
+            commentBody += `**Category:** \`${category}\`\n`;
+            commentBody += `**Confidence:** ${confidence}%\n`;
+            commentBody += `**Priority:** ${priority}\n\n`;
+            commentBody += `**Summary:** ${summary}\n\n`;
+            commentBody += `**Reasoning:** ${reasoning}\n\n`;
+
+            // Add next steps based on confidence
+            if (confidence >= 80) {
+              commentBody += `---\n\n`;
+              commentBody += `:robot: **High confidence detected!** Triggering automated fix proposal workflow.\n\n`;
+              commentBody += `The \`propose-fix\` workflow will analyze this issue and create a PR with suggested changes.`;
+            } else {
+              commentBody += `---\n\n`;
+              commentBody += `:eyes: **Manual review required.** Confidence is below threshold (< 80%).\n\n`;
+              commentBody += `A human should review this issue to determine the appropriate action.`;
+            }
+
+            // Post comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            });
+
+      - name: Trigger fix proposal for high confidence issues
+        if: success() && steps.analyze.outputs.confidence >= 80
+        uses: actions/github-script@v7
+        env:
+          CATEGORY: ${{ steps.analyze.outputs.category }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Trigger the propose-fix workflow
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'propose-fix.yml',
+              ref: 'main',
+              inputs: {
+                issue_number: context.issue.number.toString(),
+                category: process.env.CATEGORY
+              }
+            });
+
+            console.log(`Triggered propose-fix workflow for issue #${context.issue.number}`);
+
+      - name: Handle triage failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Add failure comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `:warning: Auto-triage failed. Please review manually.\n\nCheck the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`
+            });
+
+            // Add needs-review label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-review', 'triage-failed']
+            });

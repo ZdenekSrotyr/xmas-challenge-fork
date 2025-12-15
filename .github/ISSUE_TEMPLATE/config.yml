@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Keboola Documentation
+    url: https://developers.keboola.com
+    about: Browse the official Keboola developer documentation
+  - name: Keboola Support
+    url: https://help.keboola.com
+    about: Get help from Keboola support team

@@ -1,0 +1,437 @@
+name: Validate Examples
+
+on:
+  # Run daily at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Run on PRs that modify SKILL.md files or workflow files
+  pull_request:
+    paths:
+      - '**/SKILL.md'
+      - '**/*.md'
+      - '.github/workflows/validate-examples.yml'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+# Prevent multiple validation runs from conflicting
+concurrency:
+  group: validate-examples-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyyaml requests markdown beautifulsoup4 lxml
+
+      - name: Find all SKILL.md files
+        id: find-skills
+        run: |
+          # Find all SKILL.md files in the repository
+          skill_files=$(find . -name "SKILL.md" -type f | tr '\n' ' ')
+          echo "skill_files=${skill_files}" >> $GITHUB_OUTPUT
+          echo "Found SKILL.md files: ${skill_files}"
+
+      - name: Extract and validate Python code examples
+        id: validate-python
+        run: |
+          python - <<'EOF'
+          import os
+          import re
+          import ast
+          import sys
+          from pathlib import Path
+
+          # Get skill files from previous step
+          skill_files_str = """${{ steps.find-skills.outputs.skill_files }}"""
+          skill_files = [f.strip() for f in skill_files_str.split() if f.strip()]
+
+          validation_errors = []
+          total_examples = 0
+          valid_examples = 0
+
+          def extract_python_code_blocks(content):
+              """Extract Python code blocks from markdown."""
+              # Match ```python or ```py code blocks
+              pattern = r'```(?:python|py)\n(.*?)```'
+              matches = re.findall(pattern, content, re.DOTALL)
+              return matches
+
+          def validate_python_syntax(code, file_path, block_index):
+              """Validate Python code syntax."""
+              try:
+                  ast.parse(code)
+                  return True, None
+              except SyntaxError as e:
+                  error_msg = f"Syntax error in {file_path} (block {block_index}): {e.msg} at line {e.lineno}"
+                  return False, error_msg
+
+          print("=" * 80)
+          print("VALIDATING PYTHON CODE EXAMPLES")
+          print("=" * 80)
+
+          for skill_file in skill_files:
+              if not os.path.exists(skill_file):
+                  print(f"Warning: File not found: {skill_file}")
+                  continue
+
+              print(f"\nChecking: {skill_file}")
+
+              with open(skill_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
+
+              # Extract code blocks
+              code_blocks = extract_python_code_blocks(content)
+
+              if not code_blocks:
+                  print(f"  No Python code blocks found")
+                  continue
+
+              print(f"  Found {len(code_blocks)} Python code block(s)")
+
+              for i, code in enumerate(code_blocks, 1):
+                  total_examples += 1
+
+                  # Skip examples that are intentionally incomplete or templates
+                  if any(marker in code for marker in ['...', '# TODO', '# REPLACE', 'PLACEHOLDER']):
+                      print(f"    Block {i}: Skipped (template/incomplete)")
+                      valid_examples += 1
+                      continue
+
+                  # Validate syntax
+                  is_valid, error = validate_python_syntax(code, skill_file, i)
+
+                  if is_valid:
+                      print(f"    Block {i}: Valid")
+                      valid_examples += 1
+                  else:
+                      print(f"    Block {i}: INVALID - {error}")
+                      validation_errors.append(error)
+
+          print("\n" + "=" * 80)
+          print(f"VALIDATION SUMMARY")
+          print("=" * 80)
+          print(f"Total examples: {total_examples}")
+          print(f"Valid examples: {valid_examples}")
+          print(f"Invalid examples: {len(validation_errors)}")
+
+          if validation_errors:
+              print("\nERRORS FOUND:")
+              for error in validation_errors:
+                  print(f"  - {error}")
+
+          # Write summary to GitHub output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"total_examples={total_examples}\n")
+              f.write(f"valid_examples={valid_examples}\n")
+              f.write(f"invalid_examples={len(validation_errors)}\n")
+              f.write(f"has_errors={'true' if validation_errors else 'false'}\n")
+
+          # Write detailed errors to file for later use
+          if validation_errors:
+              with open('validation_errors.txt', 'w') as f:
+                  for error in validation_errors:
+                      f.write(f"{error}\n")
+
+          # Exit with error if validation failed
+          if validation_errors:
+              sys.exit(1)
+
+          print("\nAll validations passed!")
+          EOF
+
+      - name: Extract and validate documentation links
+        id: validate-links
+        if: always()
+        run: |
+          python - <<'EOF'
+          import os
+          import re
+          import sys
+          import time
+          import requests
+          from urllib.parse import urlparse
+
+          # Get skill files
+          skill_files_str = """${{ steps.find-skills.outputs.skill_files }}"""
+          skill_files = [f.strip() for f in skill_files_str.split() if f.strip()]
+
+          # Common Keboola documentation domains
+          KEBOOLA_DOMAINS = [
+              'developers.keboola.com',
+              'help.keboola.com',
+              'components.keboola.com',
+              'connection.keboola.com'
+          ]
+
+          broken_links = []
+          total_links = 0
+          valid_links = 0
+
+          def extract_links(content):
+              """Extract markdown links from content."""
+              # Match [text](url) format
+              pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
+              matches = re.findall(pattern, content)
+              return [(text, url) for text, url in matches]
+
+          def is_keboola_link(url):
+              """Check if URL is a Keboola documentation link."""
+              parsed = urlparse(url)
+              return any(domain in parsed.netloc for domain in KEBOOLA_DOMAINS)
+
+          def check_link(url, max_retries=2):
+              """Check if a link is accessible."""
+              headers = {
+                  'User-Agent': 'Mozilla/5.0 (compatible; KeboolaValidationBot/1.0)'
+              }
+
+              for attempt in range(max_retries):
+                  try:
+                      response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+
+                      # Some servers don't support HEAD, try GET
+                      if response.status_code == 405:
+                          response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+
+                      if response.status_code == 200:
+                          return True, None
+                      elif response.status_code == 404:
+                          return False, f"404 Not Found"
+                      elif response.status_code >= 500:
+                          return False, f"Server error: {response.status_code}"
+                      else:
+                          return False, f"HTTP {response.status_code}"
+
+                  except requests.exceptions.Timeout:
+                      if attempt < max_retries - 1:
+                          time.sleep(2)
+                          continue
+                      return False, "Timeout"
+                  except requests.exceptions.RequestException as e:
+                      return False, str(e)
+
+              return False, "Max retries exceeded"
+
+          print("=" * 80)
+          print("VALIDATING DOCUMENTATION LINKS")
+          print("=" * 80)
+
+          for skill_file in skill_files:
+              if not os.path.exists(skill_file):
+                  continue
+
+              print(f"\nChecking: {skill_file}")
+
+              with open(skill_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
+
+              # Extract links
+              links = extract_links(content)
+              keboola_links = [(text, url) for text, url in links if is_keboola_link(url)]
+
+              if not keboola_links:
+                  print(f"  No Keboola documentation links found")
+                  continue
+
+              print(f"  Found {len(keboola_links)} Keboola documentation link(s)")
+
+              for text, url in keboola_links:
+                  total_links += 1
+
+                  # Check link
+                  is_valid, error = check_link(url)
+
+                  if is_valid:
+                      print(f"    OK: {url}")
+                      valid_links += 1
+                  else:
+                      print(f"    BROKEN: {url} - {error}")
+                      broken_links.append({
+                          'file': skill_file,
+                          'text': text,
+                          'url': url,
+                          'error': error
+                      })
+
+                  # Rate limiting
+                  time.sleep(0.5)
+
+          print("\n" + "=" * 80)
+          print(f"LINK VALIDATION SUMMARY")
+          print("=" * 80)
+          print(f"Total links checked: {total_links}")
+          print(f"Valid links: {valid_links}")
+          print(f"Broken links: {len(broken_links)}")
+
+          if broken_links:
+              print("\nBROKEN LINKS FOUND:")
+              for link in broken_links:
+                  print(f"  - {link['file']}: {link['url']} ({link['error']})")
+
+          # Write summary to GitHub output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"total_links={total_links}\n")
+              f.write(f"valid_links={valid_links}\n")
+              f.write(f"broken_links={len(broken_links)}\n")
+              f.write(f"has_broken_links={'true' if broken_links else 'false'}\n")
+
+          # Write broken links to file
+          if broken_links:
+              with open('broken_links.txt', 'w') as f:
+                  for link in broken_links:
+                      f.write(f"{link['file']}|{link['url']}|{link['error']}\n")
+
+          # Exit with error if broken links found
+          if broken_links:
+              sys.exit(1)
+
+          print("\nAll links are valid!")
+          EOF
+
+      - name: Create validation report
+        if: always()
+        id: create-report
+        run: |
+          # Create a summary report
+          cat > validation_report.md <<'REPORT'
+          # Validation Report
+
+          ## Python Code Examples
+          - **Total examples:** ${{ steps.validate-python.outputs.total_examples }}
+          - **Valid examples:** ${{ steps.validate-python.outputs.valid_examples }}
+          - **Invalid examples:** ${{ steps.validate-python.outputs.invalid_examples }}
+
+          ## Documentation Links
+          - **Total links checked:** ${{ steps.validate-links.outputs.total_links }}
+          - **Valid links:** ${{ steps.validate-links.outputs.valid_links }}
+          - **Broken links:** ${{ steps.validate-links.outputs.broken_links }}
+
+          REPORT
+
+          # Add errors if they exist
+          if [ -f validation_errors.txt ]; then
+            echo "" >> validation_report.md
+            echo "## Python Syntax Errors" >> validation_report.md
+            echo '```' >> validation_report.md
+            cat validation_errors.txt >> validation_report.md
+            echo '```' >> validation_report.md
+          fi
+
+          if [ -f broken_links.txt ]; then
+            echo "" >> validation_report.md
+            echo "## Broken Links" >> validation_report.md
+            echo "" >> validation_report.md
+            while IFS='|' read -r file url error; do
+              echo "- **$file**: [$url]($url) - $error" >> validation_report.md
+            done < broken_links.txt
+          fi
+
+          cat validation_report.md
+
+      - name: Comment on PR with validation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Read validation report
+            let report = '';
+            try {
+              report = fs.readFileSync('validation_report.md', 'utf8');
+            } catch (e) {
+              report = 'Failed to generate validation report';
+            }
+
+            // Determine status emoji
+            const hasPythonErrors = '${{ steps.validate-python.outputs.has_errors }}' === 'true';
+            const hasBrokenLinks = '${{ steps.validate-links.outputs.has_broken_links }}' === 'true';
+            const statusEmoji = (!hasPythonErrors && !hasBrokenLinks) ? ':white_check_mark:' : ':x:';
+
+            // Post comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${statusEmoji} **Example Validation Results**\n\n${report}\n\n*Automated validation run* | [View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+            });
+
+      - name: Create issue for validation failures (scheduled runs only)
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Read validation report
+            let report = '';
+            try {
+              report = fs.readFileSync('validation_report.md', 'utf8');
+            } catch (e) {
+              report = 'Failed to generate validation report';
+            }
+
+            // Create issue body
+            const issueBody = `## Validation Failures Detected
+
+            The daily validation check has found issues in the knowledge base.
+
+            ${report}
+
+            ---
+
+            **Action Required:** Please review and fix the issues above.
+
+            - If code examples have syntax errors, update them in the relevant SKILL.md files
+            - If documentation links are broken, update them or remove them
+            - If the issue is a false positive, update the validation script
+
+            *This issue was automatically created by the validate-examples workflow.*
+
+            [View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+
+            // Create the issue
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Validation failures detected on ${new Date().toISOString().split('T')[0]}`,
+              body: issueBody,
+              labels: ['auto-report', 'validation-failure', 'needs-review']
+            });
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: |
+            validation_report.md
+            validation_errors.txt
+            broken_links.txt
+          retention-days: 30
+          if-no-files-found: ignore

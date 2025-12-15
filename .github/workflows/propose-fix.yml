@@ -1,0 +1,535 @@
+name: Propose Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to create fix for'
+        required: true
+        type: string
+      category:
+        description: 'Issue category (api-error, outdated-docs, pitfall, other)'
+        required: true
+        type: string
+
+# Only allow one propose-fix workflow per issue at a time
+concurrency:
+  group: propose-fix-${{ github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  generate-fix:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use a PAT or GitHub App token to allow workflows to trigger on created PRs
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install anthropic pyyaml requests
+
+      - name: Fetch issue details
+        id: get-issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.inputs.issue_number }}
+            });
+
+            // Extract issue details
+            const title = issue.data.title;
+            const body = issue.data.body || '';
+            const labels = issue.data.labels.map(l => l.name);
+
+            // Write to outputs
+            core.setOutput('title', title);
+            core.setOutput('body', body);
+            core.setOutput('labels', labels.join(','));
+
+            return issue.data;
+
+      - name: Find relevant files to update
+        id: find-files
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import re
+          from pathlib import Path
+
+          category = "${{ github.event.inputs.category }}"
+          issue_body = """${{ steps.get-issue.outputs.body }}"""
+
+          # Extract mentioned file paths from issue body
+          # Look for patterns like: /path/to/file.md or `filename.md`
+          file_patterns = [
+              r'`([^`]+\.md)`',
+              r'(/[\w/\-]+\.md)',
+              r'(plugins/[\w/\-]+\.md)',
+          ]
+
+          mentioned_files = set()
+          for pattern in file_patterns:
+              matches = re.findall(pattern, issue_body)
+              mentioned_files.update(matches)
+
+          # Find all SKILL.md and guide files
+          all_skill_files = list(Path('.').rglob('SKILL.md'))
+          all_guide_files = list(Path('.').rglob('guides/**/*.md'))
+
+          # If specific files mentioned, use those; otherwise use relevant category files
+          target_files = []
+
+          if mentioned_files:
+              # Use mentioned files
+              for file_path in mentioned_files:
+                  if os.path.exists(file_path):
+                      target_files.append(file_path)
+          else:
+              # Use category-based selection
+              if category == 'api-error':
+                  # Look for files mentioning API, client, or authentication
+                  for file in all_skill_files + all_guide_files:
+                      with open(file, 'r', encoding='utf-8') as f:
+                          content = f.read().lower()
+                          if any(term in content for term in ['api', 'client', 'authentication', 'endpoint']):
+                              target_files.append(str(file))
+              elif category == 'outdated-docs':
+                  # All SKILL files might need updating
+                  target_files = [str(f) for f in all_skill_files]
+              elif category == 'pitfall':
+                  # Look for files with "pitfall" or "common mistakes" sections
+                  for file in all_skill_files + all_guide_files:
+                      with open(file, 'r', encoding='utf-8') as f:
+                          content = f.read().lower()
+                          if any(term in content for term in ['pitfall', 'common', 'mistake', 'avoid', 'error prevention']):
+                              target_files.append(str(file))
+
+          # Limit to top 5 most relevant files
+          target_files = list(set(target_files))[:5]
+
+          # Write to output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"files={','.join(target_files)}\n")
+              f.write(f"file_count={len(target_files)}\n")
+
+          print(f"Found {len(target_files)} relevant files to update:")
+          for file in target_files:
+              print(f"  - {file}")
+          EOF
+
+      - name: Generate fix with Claude
+        id: generate-fix
+        if: steps.find-files.outputs.file_count > 0
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import sys
+          from pathlib import Path
+          from anthropic import Anthropic
+
+          # Initialize Claude client
+          client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+          # Get inputs
+          issue_title = """${{ steps.get-issue.outputs.title }}"""
+          issue_body = """${{ steps.get-issue.outputs.body }}"""
+          category = "${{ github.event.inputs.category }}"
+          target_files_str = """${{ steps.find-files.outputs.files }}"""
+          target_files = [f.strip() for f in target_files_str.split(',') if f.strip()]
+
+          print("=" * 80)
+          print("GENERATING FIX PROPOSAL")
+          print("=" * 80)
+          print(f"Issue: {issue_title}")
+          print(f"Category: {category}")
+          print(f"Target files: {len(target_files)}")
+          print()
+
+          # Read current content of target files
+          file_contents = {}
+          for file_path in target_files:
+              if os.path.exists(file_path):
+                  with open(file_path, 'r', encoding='utf-8') as f:
+                      file_contents[file_path] = f.read()
+
+          # Prepare context for Claude
+          context = "Current file contents:\n\n"
+          for file_path, content in file_contents.items():
+              context += f"=== {file_path} ===\n{content}\n\n"
+
+          # Prepare the fix generation prompt
+          prompt = f"""You are an expert technical writer maintaining the Keboola AI knowledge base.
+
+          An issue has been reported:
+
+          **Title:** {issue_title}
+          **Category:** {category}
+          **Description:**
+          {issue_body}
+
+          **Current Documentation:**
+          {context}
+
+          Please analyze the issue and propose specific fixes to the documentation. Your response should be a JSON object with this structure:
+
+          {{
+            "analysis": "Brief analysis of what needs to be fixed and why",
+            "changes": [
+              {{
+                "file": "path/to/file.md",
+                "section": "Section name or line range",
+                "current": "Current problematic text (if updating existing content)",
+                "proposed": "Proposed replacement or addition",
+                "reasoning": "Why this change fixes the issue"
+              }}
+            ],
+            "pr_title": "Suggested PR title",
+            "pr_description": "Detailed PR description explaining the changes"
+          }}
+
+          Guidelines:
+          1. For API errors: Update endpoint URLs, authentication patterns, or add error handling examples
+          2. For outdated docs: Replace deprecated information with current best practices
+          3. For pitfalls: Add new entries to "Common Pitfalls" or "Error Prevention" sections
+          4. Be specific - provide exact text to add/replace
+          5. Maintain the existing documentation style and formatting
+          6. Include code examples where appropriate
+          7. Ensure changes are backward compatible where possible
+
+          Respond with ONLY valid JSON, no markdown formatting."""
+
+          try:
+              print("Calling Claude API to generate fix proposal...")
+
+              # Call Claude API
+              message = client.messages.create(
+                  model="claude-sonnet-4-5-20250929",
+                  max_tokens=4096,
+                  messages=[
+                      {"role": "user", "content": prompt}
+                  ]
+              )
+
+              # Extract response
+              response_text = message.content[0].text.strip()
+
+              # Parse JSON response
+              fix_proposal = json.loads(response_text)
+
+              # Validate structure
+              if not all(key in fix_proposal for key in ['analysis', 'changes', 'pr_title', 'pr_description']):
+                  raise ValueError("Missing required fields in fix proposal")
+
+              # Save proposal to file
+              with open('fix_proposal.json', 'w') as f:
+                  json.dump(fix_proposal, f, indent=2)
+
+              print("\nFix proposal generated successfully!")
+              print(f"Analysis: {fix_proposal['analysis']}")
+              print(f"Number of changes: {len(fix_proposal['changes'])}")
+
+              # Write summary to GitHub output
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"has_proposal=true\n")
+                  f.write(f"change_count={len(fix_proposal['changes'])}\n")
+
+          except json.JSONDecodeError as e:
+              print(f"Error: Failed to parse Claude response as JSON: {e}", file=sys.stderr)
+              print(f"Response was: {response_text}", file=sys.stderr)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"has_proposal=false\n")
+              sys.exit(1)
+          except Exception as e:
+              print(f"Error during fix generation: {e}", file=sys.stderr)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"has_proposal=false\n")
+              sys.exit(1)
+          EOF
+
+      - name: Apply proposed changes
+        id: apply-changes
+        if: steps.generate-fix.outputs.has_proposal == 'true'
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import sys
+          from pathlib import Path
+
+          # Load fix proposal
+          with open('fix_proposal.json', 'r') as f:
+              proposal = json.load(f)
+
+          print("=" * 80)
+          print("APPLYING CHANGES")
+          print("=" * 80)
+
+          changes_applied = 0
+          files_modified = set()
+
+          for change in proposal['changes']:
+              file_path = change['file']
+              proposed = change['proposed']
+              current = change.get('current', '')
+
+              print(f"\nProcessing: {file_path}")
+              print(f"Section: {change['section']}")
+              print(f"Reasoning: {change['reasoning']}")
+
+              if not os.path.exists(file_path):
+                  print(f"  Warning: File not found, skipping")
+                  continue
+
+              try:
+                  with open(file_path, 'r', encoding='utf-8') as f:
+                      content = f.read()
+
+                  # If current text specified, replace it
+                  if current and current in content:
+                      new_content = content.replace(current, proposed)
+                      print(f"  Replaced existing content")
+                  else:
+                      # Append to appropriate section or end of file
+                      # Try to find section header
+                      section_name = change['section']
+                      section_pattern = f"## {section_name}"
+
+                      if section_pattern in content:
+                          # Insert after section header
+                          parts = content.split(section_pattern, 1)
+                          # Find the next section or end
+                          next_section = parts[1].find('\n## ')
+                          if next_section > 0:
+                              insertion_point = next_section
+                          else:
+                              insertion_point = len(parts[1])
+
+                          new_content = (
+                              parts[0] +
+                              section_pattern +
+                              parts[1][:insertion_point] +
+                              f"\n\n{proposed}\n" +
+                              parts[1][insertion_point:]
+                          )
+                          print(f"  Inserted into section: {section_name}")
+                      else:
+                          # Append to end with new section if needed
+                          if content.endswith('\n'):
+                              new_content = content + f"\n{proposed}\n"
+                          else:
+                              new_content = content + f"\n\n{proposed}\n"
+                          print(f"  Appended to end of file")
+
+                  # Write updated content
+                  with open(file_path, 'w', encoding='utf-8') as f:
+                      f.write(new_content)
+
+                  changes_applied += 1
+                  files_modified.add(file_path)
+                  print(f"  Successfully updated!")
+
+              except Exception as e:
+                  print(f"  Error: {e}", file=sys.stderr)
+                  continue
+
+          print("\n" + "=" * 80)
+          print(f"CHANGES SUMMARY")
+          print("=" * 80)
+          print(f"Changes applied: {changes_applied}/{len(proposal['changes'])}")
+          print(f"Files modified: {len(files_modified)}")
+
+          # Write to output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"changes_applied={changes_applied}\n")
+              f.write(f"files_modified={','.join(files_modified)}\n")
+
+          if changes_applied == 0:
+              print("\nWarning: No changes were applied")
+              sys.exit(1)
+          EOF
+
+      - name: Create branch and commit changes
+        id: commit
+        if: steps.apply-changes.outputs.changes_applied > 0
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create branch
+          branch_name="fix/issue-${{ github.event.inputs.issue_number }}-$(date +%s)"
+          git checkout -b "$branch_name"
+
+          # Stage changes
+          git add -A
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Commit
+          git commit -m "Fix: Address issue #${{ github.event.inputs.issue_number }}
+
+          Category: ${{ github.event.inputs.category }}
+
+          This commit addresses the issue reported in #${{ github.event.inputs.issue_number }}.
+          Changes were automatically generated by Claude and require human review.
+
+          Co-authored-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+          # Push
+          git push origin "$branch_name"
+
+          echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        id: create-pr
+        if: steps.commit.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        env:
+          BRANCH_NAME: ${{ steps.commit.outputs.branch_name }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Load fix proposal
+            const proposal = JSON.parse(fs.readFileSync('fix_proposal.json', 'utf8'));
+
+            // Create detailed PR body
+            let prBody = `## Automated Fix Proposal\n\n`;
+            prBody += `**Fixes:** #${{ github.event.inputs.issue_number }}\n`;
+            prBody += `**Category:** \`${{ github.event.inputs.category }}\`\n\n`;
+            prBody += `### Analysis\n\n${proposal.analysis}\n\n`;
+            prBody += `### Changes Made\n\n`;
+
+            for (const change of proposal.changes) {
+              prBody += `#### ${change.file}\n`;
+              prBody += `**Section:** ${change.section}\n\n`;
+              prBody += `**Reasoning:** ${change.reasoning}\n\n`;
+              prBody += `**Proposed Change:**\n\`\`\`\n${change.proposed}\n\`\`\`\n\n`;
+            }
+
+            prBody += `---\n\n`;
+            prBody += `:warning: **This PR was automatically generated by AI.**\n\n`;
+            prBody += `**Required Actions:**\n`;
+            prBody += `- [ ] Review all changes for accuracy\n`;
+            prBody += `- [ ] Verify code examples work correctly\n`;
+            prBody += `- [ ] Check that links are valid\n`;
+            prBody += `- [ ] Ensure documentation style is consistent\n`;
+            prBody += `- [ ] Test any code changes\n\n`;
+            prBody += `${proposal.pr_description}\n\n`;
+            prBody += `*Generated by propose-fix workflow* | [View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+
+            // Create PR
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: proposal.pr_title,
+              head: process.env.BRANCH_NAME,
+              base: 'main',
+              body: prBody,
+              draft: false
+            });
+
+            console.log(`Created PR #${pr.data.number}: ${pr.data.html_url}`);
+
+            // Add labels
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: ['automated-fix', 'needs-review', `category:${{ github.event.inputs.category }}`]
+            });
+
+            // Request review from maintainers (optional)
+            // await github.rest.pulls.requestReviewers({
+            //   owner: context.repo.owner,
+            //   repo: context.repo.repo,
+            //   pull_number: pr.data.number,
+            //   team_reviewers: ['maintainers']
+            // });
+
+            // Write PR URL to output
+            core.setOutput('pr_number', pr.data.number);
+            core.setOutput('pr_url', pr.data.html_url);
+
+            return pr.data;
+
+      - name: Comment on original issue with PR link
+        if: steps.create-pr.outputs.pr_number
+        uses: actions/github-script@v7
+        env:
+          PR_URL: ${{ steps.create-pr.outputs.pr_url }}
+          PR_NUMBER: ${{ steps.create-pr.outputs.pr_number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prUrl = process.env.PR_URL;
+            const prNumber = process.env.PR_NUMBER;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.inputs.issue_number }},
+              body: `:robot: **Automated fix proposed!**\n\nI've analyzed this issue and created a pull request with proposed changes.\n\n**PR:** #${prNumber}\n**Link:** ${prUrl}\n\n:eyes: Please review the changes carefully before merging. The AI-generated fixes may need adjustments.\n\n---\n\n*Generated by propose-fix workflow*`
+            });
+
+      - name: Handle fix generation failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.inputs.issue_number }},
+              body: `:warning: **Automated fix generation failed**\n\nThe propose-fix workflow encountered an error and could not generate a fix automatically.\n\nPlease review this issue manually.\n\n[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+            });
+
+            // Add label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.inputs.issue_number }},
+              labels: ['needs-manual-fix', 'automation-failed']
+            });
+
+      - name: Upload fix proposal artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-proposal-${{ github.event.inputs.issue_number }}
+          path: fix_proposal.json
+          retention-days: 30
+          if-no-files-found: ignore

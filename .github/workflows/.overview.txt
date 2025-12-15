@@ -1,0 +1,90 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    SELF-HEALING WORKFLOWS OVERVIEW                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📁 .github/
+├── 📁 workflows/
+│   ├── 🤖 auto-triage.yml           [Issue Analysis & Categorization]
+│   │   Trigger: Issue labeled "auto-report"
+│   │   Actions: Analyze → Categorize → Label → Comment
+│   │   API: Claude Sonnet 4.5
+│   │   Cost: ~$0.005 per issue
+│   │   Output: Labels, confidence score, triggers propose-fix if ≥80%
+│   │
+│   ├── ✅ validate-examples.yml      [Code & Link Validation]
+│   │   Trigger: Daily 2AM UTC, PRs, Manual
+│   │   Actions: Find SKILL.md → Validate Python → Check links
+│   │   API: None (pure validation)
+│   │   Cost: $0
+│   │   Output: Validation report, creates issue if failures
+│   │
+│   ├── 🔧 propose-fix.yml           [Automated Fix Generation]
+│   │   Trigger: Auto (from auto-triage) or Manual
+│   │   Actions: Analyze → Generate fix → Create PR
+│   │   API: Claude Sonnet 4.5
+│   │   Cost: ~$0.018 per fix
+│   │   Output: PR with proposed changes
+│   │
+│   └── 📖 README.md                 [Detailed Workflow Documentation]
+│
+├── 📁 ISSUE_TEMPLATE/
+│   ├── 📝 auto-report.yml           [Structured Issue Template]
+│   └── ⚙️  config.yml                [Template Configuration]
+│
+├── 🏗️  ARCHITECTURE.md              [System Design & Data Flow]
+├── 🚀 SETUP.md                      [Setup & Configuration Guide]
+└── 📋 QUICKREF.md                   [Quick Reference Card]
+
+═══════════════════════════════════════════════════════════════════════════════
+
+WORKFLOW FLOW:
+
+  1️⃣  Issue Created (with "auto-report" label)
+          ↓
+  2️⃣  auto-triage.yml analyzes with Claude AI
+          ↓
+  3️⃣  Labels added, comment posted
+          ↓
+  4️⃣  If confidence ≥ 80%: trigger propose-fix.yml
+          ↓
+  5️⃣  propose-fix.yml generates PR with changes
+          ↓
+  6️⃣  Human reviews and merges PR
+          ↓
+  7️⃣  Knowledge base updated ✨
+
+PARALLEL:
+  🔄 validate-examples.yml runs daily
+          ↓
+  🔍 Validates all code examples & links
+          ↓
+  ❌ If failures found: creates auto-report issue
+          ↓
+  ♻️  Feeds back into the main flow
+
+═══════════════════════════════════════════════════════════════════════════════
+
+KEY FEATURES:
+
+✅ Automatic issue triage with AI
+✅ High-confidence automated fixes
+✅ Daily validation of documentation
+✅ Human-in-the-loop for safety
+✅ Comprehensive error handling
+✅ Cost-effective (~$0.61/month typical)
+✅ Fully documented and maintainable
+✅ Uses modern 2025 GitHub Actions patterns
+✅ Claude Sonnet 4.5 (latest model)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+REQUIRED SETUP:
+
+1. Add secret: ANTHROPIC_API_KEY
+2. Enable GitHub Actions
+3. Create test issue with "auto-report" label
+4. Review and merge generated PRs
+
+See SETUP.md for detailed instructions.
+
+═══════════════════════════════════════════════════════════════════════════════

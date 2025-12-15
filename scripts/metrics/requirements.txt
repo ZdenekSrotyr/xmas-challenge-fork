@@ -1,0 +1,16 @@
+# Requirements for metrics tracking scripts
+# Python 3.10+ required
+
+# No external dependencies required - all scripts use Python standard library!
+# The following are optional for enhanced functionality:
+
+# Optional: For more advanced data analysis (not required)
+# pandas>=2.0.0
+
+# Optional: For generating more complex visualizations (not required)
+# matplotlib>=3.7.0
+
+# Note: All scripts are designed to work with Python's standard library only.
+# This keeps dependencies minimal and ensures maximum compatibility.
+#
+# If you want to extend the scripts with pandas or matplotlib, uncomment above.
