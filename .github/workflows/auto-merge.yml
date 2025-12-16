@@ -36,10 +36,11 @@ jobs:
           # Get list of changed files
           FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path')
 
-          # Check if any files outside docs/ or .github/ were changed
+          # Check if any files outside safe directories were changed
+          # Safe: docs/, claude/, gemini/, .github/, README.md, *.md
           UNSAFE=false
           for file in $FILES; do
-            if [[ ! "$file" =~ ^(docs/|\.github/|README\.md|.*\.md$) ]]; then
+            if [[ ! "$file" =~ ^(docs/|claude/|gemini/|\.github/|README\.md|.*\.md$) ]]; then
               UNSAFE=true
               break
             fi
