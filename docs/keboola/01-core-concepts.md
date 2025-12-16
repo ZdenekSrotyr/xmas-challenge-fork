@@ -51,3 +51,35 @@ Keboola operates multiple regional stacks:
 - **Azure**: connection.north-europe.azure.keboola.com
 
 Always use your project's stack URL, not a hardcoded one.
+
+## Working with Keboola: MCP vs API
+
+Keboola provides two complementary ways to interact with your data:
+
+### MCP Server (Model Context Protocol)
+
+The Keboola MCP server provides high-level tools for interactive development:
+- **Best for**: Prototyping, validation, schema inspection, debugging
+- **Authentication**: OAuth (browser-based, interactive)
+- **Tools**: `get_table`, `query_data`, `list_tables`, `get_job`, etc.
+- **Use when**: Developing locally, validating data structures, exploring tables
+
+**Example use case**: Before writing a data pipeline, use MCP to validate table schemas and test SQL queries interactively.
+
+### Storage API (REST)
+
+The Storage API provides low-level REST endpoints for production use:
+- **Best for**: Production pipelines, automation, large datasets, scheduled jobs
+- **Authentication**: Storage API token
+- **Operations**: Export/import tables, manage buckets, job polling
+- **Use when**: Building production code, processing large datasets, CI/CD
+
+**Example use case**: Automated ETL pipeline that exports tables on a schedule.
+
+### Recommended Workflow
+
+1. **Validate with MCP**: Check schemas, test queries, verify data structure
+2. **Build with Storage API**: Implement production pipeline with proper error handling
+3. **Deploy with confidence**: Code works first time because structure was validated
+
+For detailed guidance on choosing between MCP and Storage API, see the [MCP vs API Guide](04-mcp-vs-api.md).

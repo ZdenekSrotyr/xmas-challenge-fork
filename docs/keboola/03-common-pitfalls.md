@@ -130,3 +130,46 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+## 6. Not Validating Data Structure Before Building
+
+**Problem**: Writing code based on assumptions about table schemas or data, leading to runtime errors
+
+**Solution**: Use MCP server to validate before building:
+
+```python
+# ❌ WRONG - Assume columns exist
+query = f'''
+    SELECT customer_id, status, revenue
+    FROM {table_id}
+    WHERE status = 'active'
+'''
+# Runtime error if columns don't exist or have different names
+
+# ✅ CORRECT - Validate first with MCP
+# 1. Check table schema
+#    mcp__keboola__get_table("in.c-main.customers")
+#    → Verify columns: customer_id, status, revenue exist
+
+# 2. Query distinct values
+#    mcp__keboola__query_data(
+#        'SELECT DISTINCT "status" FROM "DB"."SCHEMA"."customers"'
+#    )
+#    → Returns: active, inactive, pending
+
+# 3. Write validated code
+query = f'''
+    SELECT "customer_id", "status", "revenue"
+    FROM {table_id}
+    WHERE "status" = 'active'
+'''
+# Code works first time because structure was validated
+```
+
+**Best practice workflow**:
+
+1. Use MCP to explore and validate data structure
+2. Write Storage API code with confidence
+3. No debugging needed for schema issues
+
+See [MCP vs API Guide](04-mcp-vs-api.md) for detailed validation patterns.
