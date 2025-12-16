@@ -22,14 +22,14 @@ docs/
 1. **Edit docs here** - This is the only place to edit documentation
 2. **Commit and push** - Push changes to main branch
 3. **Auto-generate** - Workflows automatically generate skills:
-   - `sync-claude-skills.yml` → `skills/claude/`
-   - `sync-gemini-skills.yml` → `skills/gemini/`
+   - `sync-claude-skills.yml` → `claude/`
+   - `sync-gemini-skills.yml` → `gemini/`
 
 ## DO NOT Edit Skills Directly
 
 ```
-❌ DO NOT EDIT: skills/claude/keboola-core/SKILL.md
-❌ DO NOT EDIT: skills/gemini/keboola-core/skill.yaml
+❌ DO NOT EDIT: claude/keboola-core/SKILL.md
+❌ DO NOT EDIT: gemini/keboola-core/skill.yaml
 
 ✅ EDIT HERE: docs/keboola/*.md
 ```
@@ -141,8 +141,8 @@ Each LLM gets documentation in its native format:
 
 | LLM    | Format | Location |
 |--------|--------|----------|
-| Claude | Markdown | `skills/claude/keboola-core/SKILL.md` |
-| Gemini | YAML | `skills/gemini/keboola-core/skill.yaml` |
+| Claude | Markdown | `claude/keboola-core/SKILL.md` |
+| Gemini | YAML | `gemini/keboola-core/skill.yaml` |
 
 The content is the same, just formatted differently.
 

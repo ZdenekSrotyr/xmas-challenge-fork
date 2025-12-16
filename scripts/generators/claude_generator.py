@@ -3,7 +3,7 @@
 Generate Claude Code SKILL.md from Markdown documentation.
 
 Usage:
-    python claude_generator.py --input docs/keboola/ --output skills/claude/keboola-core/SKILL.md
+    python claude_generator.py --input docs/keboola/ --output claude/keboola-core/SKILL.md
 """
 
 import argparse
@@ -143,7 +143,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python claude_generator.py --input docs/keboola/ --output skills/claude/keboola-core/SKILL.md
+  python claude_generator.py --input docs/keboola/ --output claude/keboola-core/SKILL.md
         """
     )
 

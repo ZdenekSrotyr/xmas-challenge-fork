@@ -3,7 +3,7 @@
 Export Knowledge Graph to JSON for vis.js visualization.
 
 Usage:
-    python export_json.py --db automation/graph/data/graph.db --output web/data/graph.json
+    python export_json.py --db automation/graph/data/graph.db --output automation/web/data/graph.json
 """
 
 import argparse
@@ -288,8 +288,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python export_json.py --db automation/graph/data/graph.db --output web/data/graph.json
-  python export_json.py --output web/data/graph.json  # Uses default DB path
+  python export_json.py --db automation/graph/data/graph.db --output automation/web/data/graph.json
+  python export_json.py --output automation/web/data/graph.json  # Uses default DB path
         """
     )
 

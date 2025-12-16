@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation Browser</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Sidebar: Docs List & Stats -->
+        <aside class="sidebar">
+            <header class="sidebar-header">
+                <h1>Documentation</h1>
+            </header>
+
+            <section class="docs-section">
+                <h2>Documents</h2>
+                <div id="docs-list" class="docs-list">
+                    <div class="loading">Loading...</div>
+                </div>
+            </section>
+
+            <section class="stats-section">
+                <h2>Statistics</h2>
+                <div id="stats" class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Documents:</span>
+                        <span id="doc-count" class="stat-value">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Commits:</span>
+                        <span id="commit-count" class="stat-value">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Authors:</span>
+                        <span id="author-count" class="stat-value">-</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="recent-section">
+                <h2>Recent Changes</h2>
+                <div id="recent-changes" class="recent-changes">
+                    <div class="loading">Loading...</div>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Main Content: Document Viewer -->
+        <main class="content">
+            <div id="doc-viewer" class="doc-viewer">
+                <div class="welcome">
+                    <h1>Welcome to Documentation Browser</h1>
+                    <p>Select a document from the sidebar to view its content and history.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel: History -->
+        <aside class="history-panel">
+            <header class="history-header">
+                <h2>History</h2>
+            </header>
+            <div id="history-list" class="history-list">
+                <div class="empty-state">
+                    <p>Select a document to view its history</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Loading documentation...</p>
+    </div>
+
+    <div id="error-overlay" class="error-overlay hidden">
+        <div class="error-content">
+            <div class="error-icon">&#9888;</div>
+            <h2>Failed to Load Documentation</h2>
+            <p id="error-message">An error occurred while loading the documentation.</p>
+            <button id="retry-button" class="retry-button">Retry</button>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

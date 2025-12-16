@@ -22,20 +22,20 @@
 │       ├── 02-storage-api.md
 │       └── 03-common-pitfalls.md
 │
-├── skills/                        # 🤖 Generated Skills (DO NOT EDIT MANUALLY)
-│   ├── claude/                    # For Claude Code
-│   │   └── keboola-core/
-│   │       └── SKILL.md           # ← Generated from docs/
-│   └── gemini/                    # For Gemini (future)
-│       └── keboola-core/
-│           └── skill.yaml         # ← Generated from docs/
+├── claude/                        # 🤖 Generated Claude Skills (DO NOT EDIT MANUALLY)
+│   └── keboola-core/
+│       └── SKILL.md               # ← Generated from docs/
+│
+├── gemini/                        # 🤖 Generated Gemini Skills (DO NOT EDIT MANUALLY)
+│   └── keboola-core/
+│       └── skill.yaml             # ← Generated from docs/
 │
 ├── .github/workflows/
 │   ├── validate-docs.yml          # Validates docs/
 │   ├── auto-triage.yml            # Self-healing triage
 │   ├── propose-fix.yml            # AI-generated PRs
-│   ├── sync-claude-skills.yml     # docs/ → skills/claude/
-│   └── sync-gemini-skills.yml     # docs/ → skills/gemini/
+│   ├── sync-claude-skills.yml     # docs/ → claude/
+│   └── sync-gemini-skills.yml     # docs/ → gemini/
 │
 └── scripts/generators/
     ├── claude_generator.py        # Markdown → Claude SKILL.md
@@ -114,10 +114,10 @@ git push
 ### 3. View Generated Skills
 ```bash
 # Claude skill
-cat skills/claude/keboola-core/SKILL.md
+cat claude/keboola-core/SKILL.md
 
 # Gemini skill (when implemented)
-cat skills/gemini/keboola-core/skill.yaml
+cat gemini/keboola-core/skill.yaml
 ```
 
 ## Active PRs and Issues

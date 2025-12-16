@@ -3,7 +3,7 @@
 Generate Gemini skill.yaml from Markdown documentation.
 
 Usage:
-    python gemini_generator.py --input docs/keboola/ --output skills/gemini/keboola-core/skill.yaml
+    python gemini_generator.py --input docs/keboola/ --output gemini/keboola-core/skill.yaml
 """
 
 import argparse
