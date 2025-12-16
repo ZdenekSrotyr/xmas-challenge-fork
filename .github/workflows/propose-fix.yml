@@ -396,6 +396,9 @@ jobs:
           branch_name="fix/issue-${{ github.event.inputs.issue_number }}-$(date +%s)"
           git checkout -b "$branch_name"
 
+          # Remove metadata file (should not be committed)
+          rm -f fix_proposal.json
+
           # Stage changes
           git add -A
 
