@@ -368,3 +368,346 @@ def safe_api_call(url, headers):
 ---
 
 **End of Skill**
+
+---
+
+<!-- Source: 04-jobs-api.md -->
+
+# Jobs API
+
+## Running Transformations
+
+The Jobs API allows you to programmatically trigger transformations and other components.
+
+### Trigger a Transformation
+
+```python
+import requests
+import os
+import time
+
+stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+token = os.environ["KEBOOLA_TOKEN"]
+
+# Start a transformation job
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "component": "keboola.snowflake-transformation",
+        "config": "12345",  # Your transformation config ID
+        "mode": "run"
+    }
+)
+
+if response.status_code != 201:
+    raise Exception(f"Failed to start job: {response.text}")
+
+job_id = response.json()["id"]
+print(f"Started job {job_id}")
+
+# Poll for completion
+while True:
+    job_response = requests.get(
+        f"https://{stack_url}/v2/storage/jobs/{job_id}",
+        headers={"X-StorageApi-Token": token}
+    )
+    
+    job = job_response.json()
+    status = job["status"]
+    
+    if status == "success":
+        print("Transformation completed successfully")
+        break
+    elif status == "error":
+        error_msg = job.get("result", {}).get("message", "Unknown error")
+        raise Exception(f"Transformation failed: {error_msg}")
+    elif status in ["waiting", "processing"]:
+        print(f"Job status: {status}")
+        time.sleep(5)
+    else:
+        raise Exception(f"Unexpected job status: {status}")
+```
+
+### Get Component Configuration ID
+
+To run a transformation, you need its configuration ID:
+
+```python
+# List all configurations for a component
+response = requests.get(
+    f"https://{stack_url}/v2/storage/components/keboola.snowflake-transformation/configs",
+    headers={"X-StorageApi-Token": token}
+)
+
+configs = response.json()
+for config in configs:
+    print(f"{config['id']}: {config['name']}")
+```
+
+### Trigger Specific Transformation within Config
+
+If your configuration has multiple transformations, you can run specific ones:
+
+```python
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "component": "keboola.snowflake-transformation",
+        "config": "12345",
+        "mode": "run",
+        "configData": {
+            "parameters": {
+                "blocks": ["transformation_name"]  # Optional: run specific blocks
+            }
+        }
+    }
+)
+```
+
+### Run Multiple Transformations Sequentially
+
+```python
+def run_transformation(config_id, component="keboola.snowflake-transformation"):
+    """Run a transformation and wait for completion."""
+    # Start job
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/jobs",
+        headers={
+            "X-StorageApi-Token": token,
+            "Content-Type": "application/json"
+        },
+        json={
+            "component": component,
+            "config": config_id,
+            "mode": "run"
+        }
+    )
+    
+    if response.status_code != 201:
+        raise Exception(f"Failed to start job: {response.text}")
+    
+    job_id = response.json()["id"]
+    
+    # Wait for completion
+    while True:
+        job_response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        
+        job = job_response.json()
+        
+        if job["status"] == "success":
+            return job
+        elif job["status"] == "error":
+            error_msg = job.get("result", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job_id} failed: {error_msg}")
+        
+        time.sleep(5)
+
+# Run transformations in sequence
+transformations = ["12345", "12346", "12347"]
+
+for config_id in transformations:
+    print(f"Running transformation {config_id}...")
+    result = run_transformation(config_id)
+    print(f"Completed in {result.get('runTime', 0)}s")
+```
+
+### Common Component Types
+
+- **Transformations**:
+  - `keboola.snowflake-transformation`
+  - `keboola.python-transformation-v2`
+  - `keboola.r-transformation-v2`
+  - `transformation` (legacy SQL transformations)
+
+- **Extractors** (examples):
+  - `keboola.ex-db-snowflake`
+  - `keboola.ex-google-analytics-v4`
+  - `keboola.ex-aws-s3`
+
+- **Writers** (examples):
+  - `keboola.wr-db-snowflake`
+  - `keboola.wr-google-sheets`
+
+### Job Status Reference
+
+- `waiting`: Job is queued
+- `processing`: Job is currently running
+- `success`: Job completed successfully
+- `error`: Job failed
+- `cancelled`: Job was cancelled
+- `terminating`: Job is being terminated
+- `terminated`: Job was terminated
+
+### Error Handling Best Practices
+
+```python
+def run_job_with_retry(component, config_id, max_retries=3):
+    """Run job with retry logic for transient failures."""
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                f"https://{stack_url}/v2/storage/jobs",
+                headers={
+                    "X-StorageApi-Token": token,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "component": component,
+                    "config": config_id,
+                    "mode": "run"
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 201:
+                job_id = response.json()["id"]
+                
+                # Poll for completion with timeout
+                start_time = time.time()
+                timeout = 3600  # 1 hour
+                
+                while time.time() - start_time < timeout:
+                    job_response = requests.get(
+                        f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                        headers={"X-StorageApi-Token": token}
+                    )
+                    
+                    job = job_response.json()
+                    
+                    if job["status"] == "success":
+                        return job
+                    elif job["status"] == "error":
+                        error_msg = job.get("result", {}).get("message", "Unknown error")
+                        
+                        # Check if error is retryable
+                        if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
+                            if attempt < max_retries - 1:
+                                print(f"Transient error, retrying... (attempt {attempt + 1}/{max_retries})")
+                                time.sleep(2 ** attempt)  # Exponential backoff
+                                break
+                        
+                        raise Exception(f"Job failed: {error_msg}")
+                    
+                    time.sleep(5)
+                
+                raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+            
+            elif response.status_code == 429:
+                # Rate limited
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"Rate limited, waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception("Rate limit exceeded")
+            else:
+                raise Exception(f"Failed to start job: {response.status_code} {response.text}")
+                
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                print(f"Request timeout, retrying... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(2 ** attempt)
+            else:
+                raise
+    
+    raise Exception(f"Job failed after {max_retries} attempts")
+```
+
+
+
+
+## 6. Not Handling Job Timeouts
+
+**Problem**: Long-running transformations timing out without proper handling
+
+**Solution**: Implement timeout logic and provide feedback:
+
+```python
+def wait_for_job_with_timeout(job_id, timeout=3600, poll_interval=5):
+    """Wait for job completion with configurable timeout."""
+    start_time = time.time()
+    last_status = None
+    
+    while time.time() - start_time < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        
+        job = response.json()
+        status = job["status"]
+        
+        # Log status changes
+        if status != last_status:
+            elapsed = int(time.time() - start_time)
+            print(f"[{elapsed}s] Job status: {status}")
+            last_status = status
+        
+        if status == "success":
+            return job
+        elif status == "error":
+            error_msg = job.get("result", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job_id} failed: {error_msg}")
+        
+        time.sleep(poll_interval)
+    
+    # Timeout reached - job may still be running
+    raise TimeoutError(
+        f"Job {job_id} did not complete within {timeout}s. "
+        f"Last status: {last_status}. Job may still be running in Keboola."
+    )
+```
+
+## 7. Using Wrong Component Names
+
+**Problem**: Using incorrect component IDs when triggering jobs
+
+**Solution**: Always verify component names from the UI or API:
+
+```python
+# ❌ WRONG - using old or incorrect component name
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    json={
+        "component": "transformation",  # Legacy name
+        "config": "12345"
+    }
+)
+
+# ✅ CORRECT - use current component name
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "component": "keboola.snowflake-transformation",
+        "config": "12345",
+        "mode": "run"
+    }
+)
+
+# Verify component exists
+components_response = requests.get(
+    f"https://{stack_url}/v2/storage/components",
+    headers={"X-StorageApi-Token": token}
+)
+
+component_ids = [c["id"] for c in components_response.json()]
+if "keboola.snowflake-transformation" not in component_ids:
+    print("Component not available in this project")
+```
+
+
