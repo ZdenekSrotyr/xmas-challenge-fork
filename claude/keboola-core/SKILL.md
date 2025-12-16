@@ -107,38 +107,60 @@ for table in tables:
 ### Export Table Data
 
 ```python
-# Get table export URL
-response = requests.get(
+import time
+import requests
+
+# Start async table export (NOTE: Uses POST, not GET)
+response = requests.post(
     f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
     headers={"X-StorageApi-Token": token}
 )
+response.raise_for_status()
 
 job_id = response.json()["id"]
 
-# Poll for completion
-import time
-while True:
-    job_response = requests.get(
-        f"https://{stack_url}/v2/storage/jobs/{job_id}",
-        headers={"X-StorageApi-Token": token}
-    )
+# Poll for completion with timeout and error handling
+timeout = 300  # 5 minutes
+start_time = time.time()
 
-    job = job_response.json()
-    if job["status"] in ["success", "error"]:
-        break
+while time.time() - start_time < timeout:
+    try:
+        job_response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token},
+            timeout=30
+        )
+        job_response.raise_for_status()
+        job = job_response.json()
 
-    time.sleep(2)
+        if job["status"] == "success":
+            # Download and save to file
+            file_url = job["results"]["file"]["url"]
+            data_response = requests.get(file_url)
+            data_response.raise_for_status()
 
-# Download data
-if job["status"] == "success":
-    file_url = job["results"]["file"]["url"]
-    data_response = requests.get(file_url)
+            # Save to local file
+            with open("output.csv", "wb") as f:
+                f.write(data_response.content)
+            
+            print(f"Table exported to output.csv")
+            break
 
-    import csv
-    import io
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job['status']}: {error_msg}")
 
-    reader = csv.DictReader(io.StringIO(data_response.text))
-    data = list(reader)
+        # Job still processing
+        time.sleep(2)
+
+    except requests.exceptions.Timeout:
+        print("Request timed out, retrying...")
+        time.sleep(5)
+    except requests.exceptions.RequestException as e:
+        print(f"Network error: {e}, retrying...")
+        time.sleep(5)
+else:
+    raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
 ```
 
 ## Writing Tables
@@ -368,3 +390,167 @@ def safe_api_call(url, headers):
 ---
 
 **End of Skill**
+
+
+## 6. Using Wrong HTTP Methods
+
+**Problem**: Using GET instead of POST for async operations
+
+**Solution**: Always use POST for async export endpoints:
+
+```python
+# ❌ WRONG - This will fail with 405 Method Not Allowed
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+
+# ✅ CORRECT - Async exports require POST
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+```
+
+**Key endpoints requiring POST**:
+- `/v2/storage/tables/{id}/export-async` - Export table data
+- `/v2/storage/buckets/{id}/tables-async` - Create table
+- `/v2/storage/tables/{id}/import-async` - Import data
+
+## 7. Incomplete Job Status Handling
+
+**Problem**: Only checking for "success" and "error" statuses
+
+**Solution**: Handle all possible job states:
+
+```python
+def wait_for_job(job_id, timeout=300):
+    """Wait for job completion with proper state handling."""
+    start = time.time()
+
+    while time.time() - start < timeout:
+        try:
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=30
+            )
+            response.raise_for_status()
+            job = response.json()
+
+            # Success state
+            if job["status"] == "success":
+                return job
+
+            # Failure states - all should raise exceptions
+            elif job["status"] in ["error", "cancelled", "terminated"]:
+                error_msg = job.get("error", {}).get("message", "Unknown error")
+                raise Exception(f"Job {job['status']}: {error_msg}")
+
+            # Still processing: waiting, processing
+            time.sleep(2)
+
+        except requests.exceptions.RequestException as e:
+            print(f"Network error polling job: {e}")
+            time.sleep(5)
+
+    raise TimeoutError(f"Job {job_id} did not complete in {timeout}s")
+```
+
+**Possible job statuses**:
+- `waiting` - Job queued
+- `processing` - Job running
+- `success` - Job completed successfully
+- `error` - Job failed with error
+- `cancelled` - Job was cancelled
+- `terminated` - Job was terminated
+
+
+
+### Recommended: Reusable Export Function
+
+For production use, wrap the export logic in a reusable function:
+
+```python
+import time
+import requests
+from typing import Optional
+
+def export_table_to_file(
+    table_id: str,
+    output_file: str,
+    stack_url: str,
+    token: str,
+    timeout: int = 300
+) -> None:
+    """Export Keboola table to local CSV file.
+    
+    Args:
+        table_id: Table ID (e.g., 'in.c-main.customers')
+        output_file: Path to save CSV file
+        stack_url: Keboola stack URL
+        token: Storage API token
+        timeout: Max seconds to wait for job completion
+        
+    Raises:
+        Exception: If job fails or is cancelled
+        TimeoutError: If job doesn't complete in time
+        requests.exceptions.RequestException: On network errors
+    """
+    # Start export job
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    print(f"Export job started: {job_id}")
+    
+    # Poll for completion
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            job_response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=30
+            )
+            job_response.raise_for_status()
+            job = job_response.json()
+            
+            if job["status"] == "success":
+                # Download file
+                file_url = job["results"]["file"]["url"]
+                data_response = requests.get(file_url, timeout=60)
+                data_response.raise_for_status()
+                
+                # Save to file
+                with open(output_file, "wb") as f:
+                    f.write(data_response.content)
+                
+                print(f"Table exported to {output_file}")
+                return
+                
+            elif job["status"] in ["error", "cancelled", "terminated"]:
+                error_msg = job.get("error", {}).get("message", "Unknown error")
+                raise Exception(f"Job {job['status']}: {error_msg}")
+            
+            # Still processing
+            time.sleep(2)
+            
+        except requests.exceptions.Timeout:
+            print("Request timed out, retrying...")
+            time.sleep(5)
+    
+    raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+
+# Usage example
+export_table_to_file(
+    table_id="in.c-main.customers",
+    output_file="customers.csv",
+    stack_url=os.environ["KEBOOLA_STACK_URL"],
+    token=os.environ["KEBOOLA_TOKEN"]
+)
+```
+
