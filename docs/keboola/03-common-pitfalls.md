@@ -329,3 +329,87 @@ else:
 - `Table 'in.c-main.customers' does not exist` (in workspace) → Use quoted, qualified name
 - `Invalid table ID` (in Storage API) → Remove quotes and project ID
 - `SQL compilation error` (in workspace) → Missing quotes or project ID
+
+
+## 9. Incorrect Pagination Usage
+
+**Problem**: Using data-preview pagination for large table exports or not handling pagination in list endpoints
+
+**Solution**: Choose the right pagination strategy for your use case:
+
+```python
+# ❌ WRONG - Using data-preview for large tables (limited to 1000 rows)
+def export_large_table_wrong(table_id):
+    offset = 0
+    limit = 1000
+    all_data = []
+    
+    while True:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables/{table_id}/data-preview",
+            headers={"X-StorageApi-Token": token},
+            params={"limit": limit, "offset": offset}
+        )
+        data = response.json()
+        if not data:
+            break
+        all_data.extend(data)
+        offset += limit
+    
+    return all_data  # Will never get more than 1000 rows!
+
+# ✅ CORRECT - Use async export for complete table data
+def export_large_table_correct(table_id):
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    # Poll and download (see full example in Storage API docs)
+    # Returns complete dataset regardless of size
+    return wait_for_export_job(job_id)
+
+# ❌ WRONG - Not handling pagination in list endpoints
+def get_all_tables_wrong():
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/tables",
+        headers={"X-StorageApi-Token": token}
+    )
+    return response.json()  # Only returns first page!
+
+# ✅ CORRECT - Paginate through all results
+def get_all_tables_correct():
+    all_tables = []
+    offset = 0
+    limit = 100
+    
+    while True:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables",
+            headers={"X-StorageApi-Token": token},
+            params={"limit": limit, "offset": offset}
+        )
+        response.raise_for_status()
+        tables = response.json()
+        
+        if not tables:
+            break
+        
+        all_tables.extend(tables)
+        
+        if len(tables) < limit:
+            break
+        
+        offset += limit
+    
+    return all_tables
+```
+
+**Rule of thumb**:
+- **Small preview (<100 rows)**: Use `data-preview` without pagination
+- **Browse/list resources**: Use pagination with `limit`/`offset`
+- **Full table export**: Use `export-async` (no manual pagination needed)
+
+**Why**: Different endpoints have different pagination capabilities and limits. Using the wrong approach can result in incomplete data or unnecessary complexity.
