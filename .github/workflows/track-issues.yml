@@ -13,6 +13,7 @@ jobs:
     permissions:
       issues: read
       contents: write
+      actions: write
 
     steps:
       - name: Checkout repository
@@ -108,5 +109,5 @@ jobs:
 
           if [ -f automation/graph/data/graph.db ]; then
             cd automation/graph
-            python knowledge_graph.py --stats >> ../../$GITHUB_STEP_SUMMARY
+            python knowledge_graph.py --stats >> $GITHUB_STEP_SUMMARY
           fi
