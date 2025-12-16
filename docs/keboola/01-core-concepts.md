@@ -51,3 +51,50 @@ Keboola operates multiple regional stacks:
 - **Azure**: connection.north-europe.azure.keboola.com
 
 Always use your project's stack URL, not a hardcoded one.
+
+### Workspaces
+
+Workspaces are temporary database environments (Snowflake, Redshift, or BigQuery) created for:
+- **Data Apps**: Direct database access for analytics
+- **Transformations**: SQL/Python data processing
+- **Sandboxes**: Ad-hoc data exploration
+
+**Key Concepts**:
+
+- **Workspace ID**: Identifies a specific workspace instance (e.g., `12345`)
+- **Project ID**: Identifies your Keboola project (e.g., `6789`)
+- **Context**: Determines which API/connection to use
+
+**Workspace vs Storage**:
+
+| Aspect | Workspace | Storage |
+|--------|-----------|--------|
+| **Technology** | Snowflake/Redshift/BigQuery | Keboola Storage API |
+| **Access Method** | Database connection (SQL) | REST API (HTTP) |
+| **Use Case** | SQL queries, Data Apps | Data management, orchestration |
+| **Persistence** | Temporary (auto-deleted) | Permanent |
+| **Table Names** | `database.schema.table` | `bucket.table` |
+
+**When to Use What**:
+
+```python
+# Use WORKSPACE when:
+# - Running inside Data App (production)
+# - Running transformation
+# - Direct SQL queries needed
+if 'KBC_PROJECT_ID' in os.environ:
+    conn = st.connection('snowflake', type='snowflake')
+    query = f'SELECT * FROM "{os.environ["KBC_PROJECT_ID"]}"."in.c-main"."customers"'
+    df = conn.query(query)
+
+# Use STORAGE API when:
+# - Running outside Keboola (local development)
+# - Managing tables/buckets
+# - Orchestrating data flows
+else:
+    import requests
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+```
