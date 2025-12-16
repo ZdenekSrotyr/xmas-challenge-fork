@@ -30,13 +30,15 @@ def wait_for_job(job_id, timeout=300):
             f"https://{stack_url}/v2/storage/jobs/{job_id}",
             headers={"X-StorageApi-Token": token}
         )
+        response.raise_for_status()
 
         job = response.json()
 
         if job["status"] == "success":
             return job
-        elif job["status"] == "error":
-            raise Exception(f"Job failed: {job.get('error', {}).get('message')}")
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job failed with status {job['status']}: {error_msg}")
 
         time.sleep(2)
 
@@ -130,3 +132,27 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+
+## 3. Wrong HTTP Method for Async Endpoints
+
+**Problem**: Using GET instead of POST for async export operations
+
+**Solution**: Always use POST for /export-async endpoints:
+
+```python
+# ❌ WRONG - This will return 405 Method Not Allowed
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+
+# ✅ CORRECT - Use POST to initiate async jobs
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+```
+
+**Why**: The `/export-async` endpoint creates a new export job, which is a write operation requiring POST. The API will reject GET requests.
+

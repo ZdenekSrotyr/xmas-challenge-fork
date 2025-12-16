@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T09:47:57.473968
+> Generated: 2025-12-16T13:59:46.632638
 
 ---
 
@@ -107,37 +107,53 @@ for table in tables:
 ### Export Table Data
 
 ```python
-# Get table export URL
-response = requests.get(
+import time
+
+# Start async export job (NOTE: POST method required)
+response = requests.post(
     f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
     headers={"X-StorageApi-Token": token}
 )
+response.raise_for_status()
 
 job_id = response.json()["id"]
 
-# Poll for completion
-import time
-while True:
+# Poll for completion with timeout
+timeout = 300  # 5 minutes
+start_time = time.time()
+
+while time.time() - start_time < timeout:
     job_response = requests.get(
         f"https://{stack_url}/v2/storage/jobs/{job_id}",
         headers={"X-StorageApi-Token": token}
     )
+    job_response.raise_for_status()
 
     job = job_response.json()
-    if job["status"] in ["success", "error"]:
+    
+    if job["status"] == "success":
+        # Download and save data to file
+        file_url = job["results"]["file"]["url"]
+        data_response = requests.get(file_url)
+        
+        with open("table_data.csv", "wb") as f:
+            f.write(data_response.content)
+        
+        print(f"Table exported to table_data.csv")
         break
-
+    
+    elif job["status"] in ["error", "cancelled", "terminated"]:
+        error_msg = job.get("error", {}).get("message", "Unknown error")
+        raise Exception(f"Export job failed with status {job['status']}: {error_msg}")
+    
     time.sleep(2)
+else:
+    raise TimeoutError(f"Export job {job_id} did not complete within {timeout} seconds")
 
-# Download data
-if job["status"] == "success":
-    file_url = job["results"]["file"]["url"]
-    data_response = requests.get(file_url)
-
-    import csv
-    import io
-
-    reader = csv.DictReader(io.StringIO(data_response.text))
+# Optional: Load data into memory if needed
+import csv
+with open("table_data.csv", "r") as f:
+    reader = csv.DictReader(f)
     data = list(reader)
 ```
 
@@ -215,6 +231,68 @@ response = requests.get(
 ```
 
 
+### Export Table to File (Complete Example)
+
+For a complete, production-ready example that saves data to a file:
+
+```python
+import requests
+import os
+import time
+
+stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+token = os.environ["KEBOOLA_TOKEN"]
+table_id = "in.c-main.customers"
+output_file = "customers.csv"
+
+def export_table_to_file(table_id, output_file, timeout=300):
+    """Export Keboola table to local CSV file."""
+    
+    # Start async export
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    print(f"Export job started: {job_id}")
+    
+    # Poll for completion
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        job_response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        job_response.raise_for_status()
+        job = job_response.json()
+        
+        if job["status"] == "success":
+            # Download file
+            file_url = job["results"]["file"]["url"]
+            data_response = requests.get(file_url)
+            
+            with open(output_file, "wb") as f:
+                f.write(data_response.content)
+            
+            print(f"Table exported to {output_file}")
+            return output_file
+        
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job['status']}: {error_msg}")
+        
+        time.sleep(2)
+    
+    raise TimeoutError(f"Export did not complete within {timeout}s")
+
+# Usage
+export_table_to_file(table_id, output_file)
+```
+
+
+
 ---
 
 <!-- Source: 03-common-pitfalls.md -->
@@ -251,13 +329,15 @@ def wait_for_job(job_id, timeout=300):
             f"https://{stack_url}/v2/storage/jobs/{job_id}",
             headers={"X-StorageApi-Token": token}
         )
+        response.raise_for_status()
 
         job = response.json()
 
         if job["status"] == "success":
             return job
-        elif job["status"] == "error":
-            raise Exception(f"Job failed: {job.get('error', {}).get('message')}")
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job failed with status {job['status']}: {error_msg}")
 
         time.sleep(2)
 
@@ -353,13 +433,37 @@ def safe_api_call(url, headers):
 ```
 
 
+## 3. Wrong HTTP Method for Async Endpoints
+
+**Problem**: Using GET instead of POST for async export operations
+
+**Solution**: Always use POST for /export-async endpoints:
+
+```python
+# ❌ WRONG - This will return 405 Method Not Allowed
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+
+# ✅ CORRECT - Use POST to initiate async jobs
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+```
+
+**Why**: The `/export-async` endpoint creates a new export job, which is a write operation requiring POST. The API will reject GET requests.
+
+
+
 ---
 
 ## Metadata
 
 ```json
 {
-  "generated_at": "2025-12-16T09:47:57.473968",
+  "generated_at": "2025-12-16T13:59:46.632638",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
