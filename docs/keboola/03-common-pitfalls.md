@@ -47,32 +47,58 @@ def wait_for_job(job_id, timeout=300):
 
 ## 3. Ignoring Rate Limits
 
-**Problem**: Making too many API calls too quickly
+**Problem**: Making too many API calls too quickly without checking rate limit headers
 
-**Solution**: Implement exponential backoff:
+**Solution**: Check rate limit headers and implement proper retry logic:
 
 ```python
 import time
 from requests.exceptions import HTTPError
 
 def api_call_with_retry(url, headers, max_retries=3):
-    """Make API call with exponential backoff."""
+    """Make API call with exponential backoff and rate limit awareness."""
     for attempt in range(max_retries):
         try:
             response = requests.get(url, headers=headers)
+            
+            # Check rate limit status before raising
+            remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
+            if remaining < 10:
+                print(f"Warning: Only {remaining} requests remaining")
+            
             response.raise_for_status()
             return response.json()
 
         except HTTPError as e:
             if e.response.status_code == 429:  # Rate limited
-                wait_time = 2 ** attempt
+                # Use Retry-After header if available
+                retry_after = int(e.response.headers.get('Retry-After', 60))
+                wait_time = retry_after if attempt == 0 else min(2 ** attempt, retry_after)
                 print(f"Rate limited. Waiting {wait_time}s...")
                 time.sleep(wait_time)
             else:
                 raise
 
-    raise Exception("Max retries exceeded")
+    raise Exception("Max retries exceeded due to rate limiting")
 ```
+
+**Common rate limit mistakes**:
+
+```python
+# ❌ WRONG - Ignoring rate limit headers
+for i in range(1000):
+    response = requests.get(url, headers=headers)  # Will hit rate limit
+
+# ✅ CORRECT - Check headers and batch requests
+response = requests.get(f"{stack_url}/v2/storage/tables", headers=headers)
+remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
+
+if remaining < len(table_ids):
+    print(f"Rate limit too low ({remaining}), batching operations...")
+    # Wait or batch operations
+```
+
+See [Storage API - Rate Limiting](02-storage-api.md#rate-limiting) for detailed documentation.
 
 ## 4. Not Validating Table IDs
 

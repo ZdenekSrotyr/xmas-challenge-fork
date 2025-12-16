@@ -451,3 +451,169 @@ response = requests.get(
     headers={"X-StorageApi-Token": storage_token}
 )
 ```
+
+### Rate Limiting
+
+The Storage API implements rate limiting to ensure fair usage and platform stability.
+
+**Rate Limit Headers**:
+
+Every API response includes rate limit information in headers:
+
+```python
+import requests
+
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": token}
+)
+
+# Check rate limit status
+remaining = response.headers.get('X-RateLimit-Remaining')
+limit = response.headers.get('X-RateLimit-Limit')
+reset = response.headers.get('X-RateLimit-Reset')  # Unix timestamp
+
+print(f"Rate limit: {remaining}/{limit} requests remaining")
+print(f"Resets at: {reset}")
+```
+
+**Rate Limit Tiers**:
+
+- **Standard projects**: 1000 requests per hour
+- **Enterprise projects**: 5000 requests per hour
+- **Job-related endpoints** (export, import): 100 concurrent jobs
+
+**Handling 429 Responses**:
+
+When rate limited, the API returns HTTP 429 with `Retry-After` header:
+
+```python
+import time
+from requests.exceptions import HTTPError
+
+def make_api_request_with_rate_limit_handling(url, headers, max_retries=3):
+    """Make API request with automatic rate limit retry."""
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        
+        except HTTPError as e:
+            if e.response.status_code == 429:
+                # Rate limited - wait and retry
+                retry_after = int(e.response.headers.get('Retry-After', 60))
+                print(f"Rate limited. Waiting {retry_after}s before retry...")
+                time.sleep(retry_after)
+                continue
+            else:
+                raise
+    
+    raise Exception(f"Failed after {max_retries} retries due to rate limiting")
+
+# Usage
+tables = make_api_request_with_rate_limit_handling(
+    f"https://{stack_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": token}
+)
+```
+
+**Best Practices for Rate Limit Management**:
+
+1. **Monitor remaining requests**:
+```python
+def check_rate_limit_status(response):
+    """Check if approaching rate limit."""
+    remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
+    limit = int(response.headers.get('X-RateLimit-Limit', 1000))
+    
+    if remaining < limit * 0.1:  # Less than 10% remaining
+        print(f"Warning: Only {remaining} requests remaining")
+        return True
+    return False
+```
+
+2. **Implement exponential backoff**:
+```python
+import time
+import random
+
+def exponential_backoff_request(url, headers, max_retries=5):
+    """Make request with exponential backoff on rate limit."""
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        
+        except HTTPError as e:
+            if e.response.status_code == 429:
+                if attempt == max_retries - 1:
+                    raise
+                
+                # Exponential backoff with jitter
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                print(f"Rate limited. Backing off for {wait_time:.1f}s...")
+                time.sleep(wait_time)
+            else:
+                raise
+```
+
+3. **Batch operations efficiently**:
+```python
+# Instead of making 100 separate table detail requests
+for table_id in table_ids:  # DON'T
+    response = requests.get(f"{stack_url}/v2/storage/tables/{table_id}")
+
+# Fetch all tables at once
+response = requests.get(f"{stack_url}/v2/storage/tables")  # DO
+tables = {t['id']: t for t in response.json()}
+```
+
+4. **Cache responses when appropriate**:
+```python
+import functools
+import time
+
+def cache_with_ttl(ttl_seconds=300):
+    """Cache API responses for specified time."""
+    def decorator(func):
+        cache = {}
+        
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            key = str(args) + str(kwargs)
+            now = time.time()
+            
+            if key in cache:
+                result, timestamp = cache[key]
+                if now - timestamp < ttl_seconds:
+                    return result
+            
+            result = func(*args, **kwargs)
+            cache[key] = (result, now)
+            return result
+        
+        return wrapper
+    return decorator
+
+@cache_with_ttl(ttl_seconds=300)
+def get_tables_list():
+    """Get tables list with 5-minute cache."""
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/tables",
+        headers={"X-StorageApi-Token": token}
+    )
+    return response.json()
+```
+
+**Rate Limit Errors**:
+
+```json
+{
+  "error": "Rate limit exceeded",
+  "code": 429,
+  "message": "Too many requests. Please retry after 60 seconds.",
+  "exceptionId": "storage-api-12345"
+}
+```

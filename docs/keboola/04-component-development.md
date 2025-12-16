@@ -492,3 +492,113 @@ ruff check --fix .
 - [Python Component Library](https://github.com/keboola/python-component)
 - [Component Tutorial](https://developers.keboola.com/extend/component/tutorial/)
 - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)
+
+## Rate Limiting in Components
+
+Components must handle Storage API rate limits gracefully to avoid job failures.
+
+### Implementing Rate Limit Handling
+
+```python
+import time
+import logging
+from requests.exceptions import HTTPError
+
+class Component(CommonInterface):
+    def _make_api_request(self, url, method='GET', **kwargs):
+        """Make API request with rate limit handling."""
+        max_retries = 5
+        
+        for attempt in range(max_retries):
+            try:
+                if method == 'GET':
+                    response = requests.get(url, **kwargs)
+                elif method == 'POST':
+                    response = requests.post(url, **kwargs)
+                
+                # Log rate limit status
+                remaining = response.headers.get('X-RateLimit-Remaining')
+                if remaining and int(remaining) < 50:
+                    logging.warning(f"Rate limit low: {remaining} requests remaining")
+                
+                response.raise_for_status()
+                return response.json()
+            
+            except HTTPError as e:
+                if e.response.status_code == 429:
+                    retry_after = int(e.response.headers.get('Retry-After', 60))
+                    logging.warning(
+                        f"Rate limited (attempt {attempt + 1}/{max_retries}). "
+                        f"Waiting {retry_after}s..."
+                    )
+                    time.sleep(retry_after)
+                    continue
+                else:
+                    raise
+        
+        raise Exception("Rate limit retries exhausted")
+    
+    def run(self):
+        try:
+            # Use rate-limit-aware API calls
+            tables = self._make_api_request(
+                f"https://{self.configuration.stack_url}/v2/storage/tables",
+                headers={"X-StorageApi-Token": self.configuration.token}
+            )
+            
+            # Process tables...
+        
+        except Exception as err:
+            logging.exception("Component execution failed")
+            sys.exit(2)
+```
+
+### Batch Processing to Reduce API Calls
+
+```python
+def process_tables_efficiently(self):
+    """Process multiple tables with minimal API calls."""
+    # ❌ BAD - One API call per table
+    for table_id in table_ids:
+        table_detail = self._make_api_request(
+            f"{stack_url}/v2/storage/tables/{table_id}"
+        )
+    
+    # ✅ GOOD - Single API call for all tables
+    all_tables = self._make_api_request(
+        f"{stack_url}/v2/storage/tables"
+    )
+    tables_by_id = {t['id']: t for t in all_tables}
+    
+    for table_id in table_ids:
+        table_detail = tables_by_id.get(table_id)
+```
+
+### Testing Rate Limit Handling
+
+```python
+import unittest
+from unittest.mock import patch, Mock
+
+class TestRateLimitHandling(unittest.TestCase):
+    @patch('requests.get')
+    def test_retry_on_rate_limit(self, mock_get):
+        """Test that component retries on 429 responses."""
+        # First call returns 429, second succeeds
+        response_429 = Mock()
+        response_429.status_code = 429
+        response_429.headers = {'Retry-After': '1'}
+        response_429.raise_for_status.side_effect = HTTPError(response=response_429)
+        
+        response_200 = Mock()
+        response_200.status_code = 200
+        response_200.json.return_value = {'data': 'success'}
+        
+        mock_get.side_effect = [response_429, response_200]
+        
+        component = Component()
+        result = component._make_api_request('https://example.com')
+        
+        self.assertEqual(result['data'], 'success')
+        self.assertEqual(mock_get.call_count, 2)
+```

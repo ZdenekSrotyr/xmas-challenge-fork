@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T15:27:09.783178'
+  generated_at: '2025-12-16T15:52:18.525530'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -202,7 +202,68 @@ knowledge_base:
     \ for Storage API call\nconn = st.connection('snowflake')  # This is workspace,\
     \ not Storage API\n\n# CORRECT: Use Storage API token\nimport requests\nresponse\
     \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": storage_token}\n)\n```\n"
+    X-StorageApi-Token\": storage_token}\n)\n```\n\n### Rate Limiting\n\nThe Storage\
+    \ API implements rate limiting to ensure fair usage and platform stability.\n\n\
+    **Rate Limit Headers**:\n\nEvery API response includes rate limit information\
+    \ in headers:\n\n```python\nimport requests\n\nresponse = requests.get(\n    f\"\
+    https://{stack_url}/v2/storage/tables\",\n    headers={\"X-StorageApi-Token\"\
+    : token}\n)\n\n# Check rate limit status\nremaining = response.headers.get('X-RateLimit-Remaining')\n\
+    limit = response.headers.get('X-RateLimit-Limit')\nreset = response.headers.get('X-RateLimit-Reset')\
+    \  # Unix timestamp\n\nprint(f\"Rate limit: {remaining}/{limit} requests remaining\"\
+    )\nprint(f\"Resets at: {reset}\")\n```\n\n**Rate Limit Tiers**:\n\n- **Standard\
+    \ projects**: 1000 requests per hour\n- **Enterprise projects**: 5000 requests\
+    \ per hour\n- **Job-related endpoints** (export, import): 100 concurrent jobs\n\
+    \n**Handling 429 Responses**:\n\nWhen rate limited, the API returns HTTP 429 with\
+    \ `Retry-After` header:\n\n```python\nimport time\nfrom requests.exceptions import\
+    \ HTTPError\n\ndef make_api_request_with_rate_limit_handling(url, headers, max_retries=3):\n\
+    \    \"\"\"Make API request with automatic rate limit retry.\"\"\"\n    for attempt\
+    \ in range(max_retries):\n        try:\n            response = requests.get(url,\
+    \ headers=headers)\n            response.raise_for_status()\n            return\
+    \ response.json()\n        \n        except HTTPError as e:\n            if e.response.status_code\
+    \ == 429:\n                # Rate limited - wait and retry\n                retry_after\
+    \ = int(e.response.headers.get('Retry-After', 60))\n                print(f\"\
+    Rate limited. Waiting {retry_after}s before retry...\")\n                time.sleep(retry_after)\n\
+    \                continue\n            else:\n                raise\n    \n  \
+    \  raise Exception(f\"Failed after {max_retries} retries due to rate limiting\"\
+    )\n\n# Usage\ntables = make_api_request_with_rate_limit_handling(\n    f\"https://{stack_url}/v2/storage/tables\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\n```\n\n**Best Practices for\
+    \ Rate Limit Management**:\n\n1. **Monitor remaining requests**:\n```python\n\
+    def check_rate_limit_status(response):\n    \"\"\"Check if approaching rate limit.\"\
+    \"\"\n    remaining = int(response.headers.get('X-RateLimit-Remaining', 0))\n\
+    \    limit = int(response.headers.get('X-RateLimit-Limit', 1000))\n    \n    if\
+    \ remaining < limit * 0.1:  # Less than 10% remaining\n        print(f\"Warning:\
+    \ Only {remaining} requests remaining\")\n        return True\n    return False\n\
+    ```\n\n2. **Implement exponential backoff**:\n```python\nimport time\nimport random\n\
+    \ndef exponential_backoff_request(url, headers, max_retries=5):\n    \"\"\"Make\
+    \ request with exponential backoff on rate limit.\"\"\"\n    for attempt in range(max_retries):\n\
+    \        try:\n            response = requests.get(url, headers=headers)\n   \
+    \         response.raise_for_status()\n            return response.json()\n  \
+    \      \n        except HTTPError as e:\n            if e.response.status_code\
+    \ == 429:\n                if attempt == max_retries - 1:\n                  \
+    \  raise\n                \n                # Exponential backoff with jitter\n\
+    \                wait_time = (2 ** attempt) + random.uniform(0, 1)\n         \
+    \       print(f\"Rate limited. Backing off for {wait_time:.1f}s...\")\n      \
+    \          time.sleep(wait_time)\n            else:\n                raise\n```\n\
+    \n3. **Batch operations efficiently**:\n```python\n# Instead of making 100 separate\
+    \ table detail requests\nfor table_id in table_ids:  # DON'T\n    response = requests.get(f\"\
+    {stack_url}/v2/storage/tables/{table_id}\")\n\n# Fetch all tables at once\nresponse\
+    \ = requests.get(f\"{stack_url}/v2/storage/tables\")  # DO\ntables = {t['id']:\
+    \ t for t in response.json()}\n```\n\n4. **Cache responses when appropriate**:\n\
+    ```python\nimport functools\nimport time\n\ndef cache_with_ttl(ttl_seconds=300):\n\
+    \    \"\"\"Cache API responses for specified time.\"\"\"\n    def decorator(func):\n\
+    \        cache = {}\n        \n        @functools.wraps(func)\n        def wrapper(*args,\
+    \ **kwargs):\n            key = str(args) + str(kwargs)\n            now = time.time()\n\
+    \            \n            if key in cache:\n                result, timestamp\
+    \ = cache[key]\n                if now - timestamp < ttl_seconds:\n          \
+    \          return result\n            \n            result = func(*args, **kwargs)\n\
+    \            cache[key] = (result, now)\n            return result\n        \n\
+    \        return wrapper\n    return decorator\n\n@cache_with_ttl(ttl_seconds=300)\n\
+    def get_tables_list():\n    \"\"\"Get tables list with 5-minute cache.\"\"\"\n\
+    \    response = requests.get(\n        f\"https://{stack_url}/v2/storage/tables\"\
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    return response.json()\n\
+    ```\n\n**Rate Limit Errors**:\n\n```json\n{\n  \"error\": \"Rate limit exceeded\"\
+    ,\n  \"code\": 429,\n  \"message\": \"Too many requests. Please retry after 60\
+    \ seconds.\",\n  \"exceptionId\": \"storage-api-12345\"\n}\n```\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
@@ -221,20 +282,34 @@ knowledge_base:
     , \"Unknown error\")\n            raise Exception(f\"Job failed with status {job['status']}:\
     \ {error_msg}\")\n\n        time.sleep(2)\n\n    raise TimeoutError(f\"Job {job_id}\
     \ did not complete in {timeout}s\")\n```\n\n## 3. Ignoring Rate Limits\n\n**Problem**:\
-    \ Making too many API calls too quickly\n\n**Solution**: Implement exponential\
-    \ backoff:\n\n```python\nimport time\nfrom requests.exceptions import HTTPError\n\
-    \ndef api_call_with_retry(url, headers, max_retries=3):\n    \"\"\"Make API call\
-    \ with exponential backoff.\"\"\"\n    for attempt in range(max_retries):\n  \
-    \      try:\n            response = requests.get(url, headers=headers)\n     \
-    \       response.raise_for_status()\n            return response.json()\n\n  \
-    \      except HTTPError as e:\n            if e.response.status_code == 429: \
-    \ # Rate limited\n                wait_time = 2 ** attempt\n                print(f\"\
-    Rate limited. Waiting {wait_time}s...\")\n                time.sleep(wait_time)\n\
-    \            else:\n                raise\n\n    raise Exception(\"Max retries\
-    \ exceeded\")\n```\n\n## 4. Not Validating Table IDs\n\n**Problem**: Using invalid\
-    \ table ID format\n\n**Solution**: Validate format before API calls:\n\n```python\n\
-    import re\n\ndef validate_table_id(table_id):\n    \"\"\"Validate Keboola table\
-    \ ID format.\"\"\"\n    pattern = r'^(in|out)\\.c-[a-z0-9-]+\\.[a-z0-9_-]+$'\n\
+    \ Making too many API calls too quickly without checking rate limit headers\n\n\
+    **Solution**: Check rate limit headers and implement proper retry logic:\n\n```python\n\
+    import time\nfrom requests.exceptions import HTTPError\n\ndef api_call_with_retry(url,\
+    \ headers, max_retries=3):\n    \"\"\"Make API call with exponential backoff and\
+    \ rate limit awareness.\"\"\"\n    for attempt in range(max_retries):\n      \
+    \  try:\n            response = requests.get(url, headers=headers)\n         \
+    \   \n            # Check rate limit status before raising\n            remaining\
+    \ = int(response.headers.get('X-RateLimit-Remaining', 0))\n            if remaining\
+    \ < 10:\n                print(f\"Warning: Only {remaining} requests remaining\"\
+    )\n            \n            response.raise_for_status()\n            return response.json()\n\
+    \n        except HTTPError as e:\n            if e.response.status_code == 429:\
+    \  # Rate limited\n                # Use Retry-After header if available\n   \
+    \             retry_after = int(e.response.headers.get('Retry-After', 60))\n \
+    \               wait_time = retry_after if attempt == 0 else min(2 ** attempt,\
+    \ retry_after)\n                print(f\"Rate limited. Waiting {wait_time}s...\"\
+    )\n                time.sleep(wait_time)\n            else:\n                raise\n\
+    \n    raise Exception(\"Max retries exceeded due to rate limiting\")\n```\n\n\
+    **Common rate limit mistakes**:\n\n```python\n# ❌ WRONG - Ignoring rate limit\
+    \ headers\nfor i in range(1000):\n    response = requests.get(url, headers=headers)\
+    \  # Will hit rate limit\n\n# ✅ CORRECT - Check headers and batch requests\nresponse\
+    \ = requests.get(f\"{stack_url}/v2/storage/tables\", headers=headers)\nremaining\
+    \ = int(response.headers.get('X-RateLimit-Remaining', 0))\n\nif remaining < len(table_ids):\n\
+    \    print(f\"Rate limit too low ({remaining}), batching operations...\")\n  \
+    \  # Wait or batch operations\n```\n\nSee [Storage API - Rate Limiting](02-storage-api.md#rate-limiting)\
+    \ for detailed documentation.\n\n## 4. Not Validating Table IDs\n\n**Problem**:\
+    \ Using invalid table ID format\n\n**Solution**: Validate format before API calls:\n\
+    \n```python\nimport re\n\ndef validate_table_id(table_id):\n    \"\"\"Validate\
+    \ Keboola table ID format.\"\"\"\n    pattern = r'^(in|out)\\.c-[a-z0-9-]+\\.[a-z0-9_-]+$'\n\
     \n    if not re.match(pattern, table_id):\n        raise ValueError(\n       \
     \     f\"Invalid table ID: {table_id}. \"\n            f\"Expected format: stage.c-bucket.table\"\
     \n        )\n\n    return True\n\n# Usage\nvalidate_table_id(\"in.c-main.customers\"\
@@ -483,7 +558,53 @@ knowledge_base:
     # Lint and auto-fix issues\nruff check --fix .\n```\n\n## Resources\n\n- [Keboola\
     \ Developer Docs](https://developers.keboola.com/)\n- [Python Component Library](https://github.com/keboola/python-component)\n\
     - [Component Tutorial](https://developers.keboola.com/extend/component/tutorial/)\n\
-    - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)\n"
+    - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)\n\
+    \n## Rate Limiting in Components\n\nComponents must handle Storage API rate limits\
+    \ gracefully to avoid job failures.\n\n### Implementing Rate Limit Handling\n\n\
+    ```python\nimport time\nimport logging\nfrom requests.exceptions import HTTPError\n\
+    \nclass Component(CommonInterface):\n    def _make_api_request(self, url, method='GET',\
+    \ **kwargs):\n        \"\"\"Make API request with rate limit handling.\"\"\"\n\
+    \        max_retries = 5\n        \n        for attempt in range(max_retries):\n\
+    \            try:\n                if method == 'GET':\n                    response\
+    \ = requests.get(url, **kwargs)\n                elif method == 'POST':\n    \
+    \                response = requests.post(url, **kwargs)\n                \n \
+    \               # Log rate limit status\n                remaining = response.headers.get('X-RateLimit-Remaining')\n\
+    \                if remaining and int(remaining) < 50:\n                    logging.warning(f\"\
+    Rate limit low: {remaining} requests remaining\")\n                \n        \
+    \        response.raise_for_status()\n                return response.json()\n\
+    \            \n            except HTTPError as e:\n                if e.response.status_code\
+    \ == 429:\n                    retry_after = int(e.response.headers.get('Retry-After',\
+    \ 60))\n                    logging.warning(\n                        f\"Rate\
+    \ limited (attempt {attempt + 1}/{max_retries}). \"\n                        f\"\
+    Waiting {retry_after}s...\"\n                    )\n                    time.sleep(retry_after)\n\
+    \                    continue\n                else:\n                    raise\n\
+    \        \n        raise Exception(\"Rate limit retries exhausted\")\n    \n \
+    \   def run(self):\n        try:\n            # Use rate-limit-aware API calls\n\
+    \            tables = self._make_api_request(\n                f\"https://{self.configuration.stack_url}/v2/storage/tables\"\
+    ,\n                headers={\"X-StorageApi-Token\": self.configuration.token}\n\
+    \            )\n            \n            # Process tables...\n        \n    \
+    \    except Exception as err:\n            logging.exception(\"Component execution\
+    \ failed\")\n            sys.exit(2)\n```\n\n### Batch Processing to Reduce API\
+    \ Calls\n\n```python\ndef process_tables_efficiently(self):\n    \"\"\"Process\
+    \ multiple tables with minimal API calls.\"\"\"\n    # ❌ BAD - One API call per\
+    \ table\n    for table_id in table_ids:\n        table_detail = self._make_api_request(\n\
+    \            f\"{stack_url}/v2/storage/tables/{table_id}\"\n        )\n    \n\
+    \    # ✅ GOOD - Single API call for all tables\n    all_tables = self._make_api_request(\n\
+    \        f\"{stack_url}/v2/storage/tables\"\n    )\n    tables_by_id = {t['id']:\
+    \ t for t in all_tables}\n    \n    for table_id in table_ids:\n        table_detail\
+    \ = tables_by_id.get(table_id)\n```\n\n### Testing Rate Limit Handling\n\n```python\n\
+    import unittest\nfrom unittest.mock import patch, Mock\n\nclass TestRateLimitHandling(unittest.TestCase):\n\
+    \    @patch('requests.get')\n    def test_retry_on_rate_limit(self, mock_get):\n\
+    \        \"\"\"Test that component retries on 429 responses.\"\"\"\n        #\
+    \ First call returns 429, second succeeds\n        response_429 = Mock()\n   \
+    \     response_429.status_code = 429\n        response_429.headers = {'Retry-After':\
+    \ '1'}\n        response_429.raise_for_status.side_effect = HTTPError(response=response_429)\n\
+    \        \n        response_200 = Mock()\n        response_200.status_code = 200\n\
+    \        response_200.json.return_value = {'data': 'success'}\n        \n    \
+    \    mock_get.side_effect = [response_429, response_200]\n        \n        component\
+    \ = Component()\n        result = component._make_api_request('https://example.com')\n\
+    \        \n        self.assertEqual(result['data'], 'success')\n        self.assertEqual(mock_get.call_count,\
+    \ 2)\n```\n"
   format: markdown
 - source: 05-dataapp-development.md
   content: "# Data App Development\n\n## Overview\n\nKeboola Data Apps are Streamlit\
