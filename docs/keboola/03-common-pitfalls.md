@@ -130,3 +130,69 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+
+## 6. Forgetting Primary Keys for Incremental Loads
+
+**Problem**: Using `incremental=1` without setting primary keys
+
+**Solution**: Always define primary keys when using incremental loads:
+
+```python
+# ❌ WRONG - Incremental without primary key will fail
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={
+        "incremental": "1",
+        "dataString": csv_data
+    }
+)
+
+# ✅ CORRECT - Set primary key when creating table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={
+        "name": "my_table",
+        "primaryKey": "id",
+        "dataString": csv_data
+    }
+)
+
+# Then incremental imports will work
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={
+        "incremental": "1",
+        "dataString": new_data
+    }
+)
+```
+
+## 7. Confusing Table Creation with Table Import
+
+**Problem**: Using the wrong endpoint for table operations
+
+**Solution**: Use correct endpoint based on operation:
+
+```python
+# ✅ Create NEW table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={"name": "my_table", "dataString": csv_data}
+)
+
+# ✅ Import to EXISTING table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={"dataString": csv_data}
+)
+```
+
+**Key differences**:
+- `/buckets/{bucket}/tables-async`: Creates new table, requires `name` parameter
+- `/tables/{table_id}/import-async`: Imports to existing table, supports `incremental` parameter

@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T09:47:57.473968
+> Generated: 2025-12-16T13:59:48.125755
 
 ---
 
@@ -197,9 +197,9 @@ def export_table_paginated(table_id, chunk_size=10000):
     return all_data
 ```
 
-### Incremental Loads
+### Incremental Reads
 
-Use changed_since parameter for incremental updates:
+Use `changedSince` parameter to export only recently modified data:
 
 ```python
 from datetime import datetime, timedelta
@@ -211,6 +211,88 @@ response = requests.get(
     f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
     headers={"X-StorageApi-Token": token},
     params={"changedSince": yesterday}
+)
+```
+
+**Note**: For incremental writes (append/update data), see the "Incremental Writes" section under "Writing Tables" above.
+
+
+### Import Data to Existing Table
+
+```python
+# Import CSV data to existing table
+csv_data = "id,name,value\n3,baz,300\n4,qux,400"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "dataString": csv_data
+    }
+)
+
+job_id = response.json()["id"]
+# Poll job until completion (same as above)
+```
+
+### Incremental Writes
+
+For incremental loads (append/update instead of replace), use the `incremental` parameter with primary keys:
+
+```python
+# Incremental import requires primary keys
+csv_data = "id,name,value\n1,foo_updated,150\n5,new_row,500"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "incremental": "1",
+        "dataString": csv_data
+    }
+)
+
+job_id = response.json()["id"]
+# Poll job until completion
+```
+
+**Note**: Incremental loads require the table to have a primary key defined. Rows with matching primary key values are updated; new rows are appended.
+
+### Set Primary Key
+
+```python
+# Set primary key when creating table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "name": "my_table",
+        "primaryKey": "id",  # Single column
+        "dataString": csv_data
+    }
+)
+
+# Or for composite primary key
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "name": "my_table",
+        "primaryKey[]": ["user_id", "date"],  # Multiple columns
+        "dataString": csv_data
+    }
 )
 ```
 
@@ -353,13 +435,79 @@ def safe_api_call(url, headers):
 ```
 
 
+## 6. Forgetting Primary Keys for Incremental Loads
+
+**Problem**: Using `incremental=1` without setting primary keys
+
+**Solution**: Always define primary keys when using incremental loads:
+
+```python
+# ❌ WRONG - Incremental without primary key will fail
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={
+        "incremental": "1",
+        "dataString": csv_data
+    }
+)
+
+# ✅ CORRECT - Set primary key when creating table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={
+        "name": "my_table",
+        "primaryKey": "id",
+        "dataString": csv_data
+    }
+)
+
+# Then incremental imports will work
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={
+        "incremental": "1",
+        "dataString": new_data
+    }
+)
+```
+
+## 7. Confusing Table Creation with Table Import
+
+**Problem**: Using the wrong endpoint for table operations
+
+**Solution**: Use correct endpoint based on operation:
+
+```python
+# ✅ Create NEW table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={"name": "my_table", "dataString": csv_data}
+)
+
+# ✅ Import to EXISTING table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token, "Content-Type": "text/csv"},
+    params={"dataString": csv_data}
+)
+```
+
+**Key differences**:
+- `/buckets/{bucket}/tables-async`: Creates new table, requires `name` parameter
+- `/tables/{table_id}/import-async`: Imports to existing table, supports `incremental` parameter
+
+
 ---
 
 ## Metadata
 
 ```json
 {
-  "generated_at": "2025-12-16T09:47:57.473968",
+  "generated_at": "2025-12-16T13:59:48.125755",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

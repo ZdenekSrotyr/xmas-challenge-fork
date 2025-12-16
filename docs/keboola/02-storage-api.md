@@ -114,9 +114,9 @@ def export_table_paginated(table_id, chunk_size=10000):
     return all_data
 ```
 
-### Incremental Loads
+### Incremental Reads
 
-Use changed_since parameter for incremental updates:
+Use `changedSince` parameter to export only recently modified data:
 
 ```python
 from datetime import datetime, timedelta
@@ -128,5 +128,87 @@ response = requests.get(
     f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
     headers={"X-StorageApi-Token": token},
     params={"changedSince": yesterday}
+)
+```
+
+**Note**: For incremental writes (append/update data), see the "Incremental Writes" section under "Writing Tables" above.
+
+
+### Import Data to Existing Table
+
+```python
+# Import CSV data to existing table
+csv_data = "id,name,value\n3,baz,300\n4,qux,400"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "dataString": csv_data
+    }
+)
+
+job_id = response.json()["id"]
+# Poll job until completion (same as above)
+```
+
+### Incremental Writes
+
+For incremental loads (append/update instead of replace), use the `incremental` parameter with primary keys:
+
+```python
+# Incremental import requires primary keys
+csv_data = "id,name,value\n1,foo_updated,150\n5,new_row,500"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "incremental": "1",
+        "dataString": csv_data
+    }
+)
+
+job_id = response.json()["id"]
+# Poll job until completion
+```
+
+**Note**: Incremental loads require the table to have a primary key defined. Rows with matching primary key values are updated; new rows are appended.
+
+### Set Primary Key
+
+```python
+# Set primary key when creating table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "name": "my_table",
+        "primaryKey": "id",  # Single column
+        "dataString": csv_data
+    }
+)
+
+# Or for composite primary key
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "name": "my_table",
+        "primaryKey[]": ["user_id", "date"],  # Multiple columns
+        "dataString": csv_data
+    }
 )
 ```

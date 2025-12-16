@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T04:43:42.602477'
+  generated_at: '2025-12-16T13:59:48.167724'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -59,12 +59,39 @@ knowledge_base:
     \                \"limit\": chunk_size,\n                \"offset\": offset\n\
     \            }\n        )\n\n        chunk = response.json()\n        if not chunk:\n\
     \            break\n\n        all_data.extend(chunk)\n        offset += chunk_size\n\
-    \n    return all_data\n```\n\n### Incremental Loads\n\nUse changed_since parameter\
-    \ for incremental updates:\n\n```python\nfrom datetime import datetime, timedelta\n\
-    \n# Get data changed in last 24 hours\nyesterday = (datetime.now() - timedelta(days=1)).isoformat()\n\
-    \nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    \n    return all_data\n```\n\n### Incremental Reads\n\nUse `changedSince` parameter\
+    \ to export only recently modified data:\n\n```python\nfrom datetime import datetime,\
+    \ timedelta\n\n# Get data changed in last 24 hours\nyesterday = (datetime.now()\
+    \ - timedelta(days=1)).isoformat()\n\nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\"changedSince\"\
-    : yesterday}\n)\n```\n"
+    : yesterday}\n)\n```\n\n**Note**: For incremental writes (append/update data),\
+    \ see the \"Incremental Writes\" section under \"Writing Tables\" above.\n\n\n\
+    ### Import Data to Existing Table\n\n```python\n# Import CSV data to existing\
+    \ table\ncsv_data = \"id,name,value\\n3,baz,300\\n4,qux,400\"\n\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n   \
+    \ headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"text/csv\"\n    },\n    params={\n        \"dataString\": csv_data\n    }\n\
+    )\n\njob_id = response.json()[\"id\"]\n# Poll job until completion (same as above)\n\
+    ```\n\n### Incremental Writes\n\nFor incremental loads (append/update instead\
+    \ of replace), use the `incremental` parameter with primary keys:\n\n```python\n\
+    # Incremental import requires primary keys\ncsv_data = \"id,name,value\\n1,foo_updated,150\\\
+    n5,new_row,500\"\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"text/csv\"\n    },\n    params={\n        \"incremental\": \"1\",\n      \
+    \  \"dataString\": csv_data\n    }\n)\n\njob_id = response.json()[\"id\"]\n# Poll\
+    \ job until completion\n```\n\n**Note**: Incremental loads require the table to\
+    \ have a primary key defined. Rows with matching primary key values are updated;\
+    \ new rows are appended.\n\n### Set Primary Key\n\n```python\n# Set primary key\
+    \ when creating table\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"text/csv\"\n    },\n    params={\n        \"name\": \"my_table\",\n      \
+    \  \"primaryKey\": \"id\",  # Single column\n        \"dataString\": csv_data\n\
+    \    }\n)\n\n# Or for composite primary key\nresponse = requests.post(\n    f\"\
+    https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\",\n    headers={\n\
+    \        \"X-StorageApi-Token\": token,\n        \"Content-Type\": \"text/csv\"\
+    \n    },\n    params={\n        \"name\": \"my_table\",\n        \"primaryKey[]\"\
+    : [\"user_id\", \"date\"],  # Multiple columns\n        \"dataString\": csv_data\n\
+    \    }\n)\n```\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
@@ -109,5 +136,30 @@ knowledge_base:
     \ token\")\n        elif e.response.status_code == 404:\n            print(\"\
     Resource not found\")\n        else:\n            print(f\"HTTP error: {e}\")\n\
     \        return None\n\n    except Exception as e:\n        print(f\"Unexpected\
-    \ error: {e}\")\n        return None\n```\n"
+    \ error: {e}\")\n        return None\n```\n\n\n## 6. Forgetting Primary Keys for\
+    \ Incremental Loads\n\n**Problem**: Using `incremental=1` without setting primary\
+    \ keys\n\n**Solution**: Always define primary keys when using incremental loads:\n\
+    \n```python\n# ❌ WRONG - Incremental without primary key will fail\nresponse =\
+    \ requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token, \"Content-Type\": \"text/csv\"\
+    },\n    params={\n        \"incremental\": \"1\",\n        \"dataString\": csv_data\n\
+    \    }\n)\n\n# ✅ CORRECT - Set primary key when creating table\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token, \"Content-Type\": \"text/csv\"},\n \
+    \   params={\n        \"name\": \"my_table\",\n        \"primaryKey\": \"id\"\
+    ,\n        \"dataString\": csv_data\n    }\n)\n\n# Then incremental imports will\
+    \ work\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token, \"Content-Type\": \"text/csv\"\
+    },\n    params={\n        \"incremental\": \"1\",\n        \"dataString\": new_data\n\
+    \    }\n)\n```\n\n## 7. Confusing Table Creation with Table Import\n\n**Problem**:\
+    \ Using the wrong endpoint for table operations\n\n**Solution**: Use correct endpoint\
+    \ based on operation:\n\n```python\n# ✅ Create NEW table\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token, \"Content-Type\": \"text/csv\"},\n \
+    \   params={\"name\": \"my_table\", \"dataString\": csv_data}\n)\n\n# ✅ Import\
+    \ to EXISTING table\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token, \"Content-Type\": \"text/csv\"\
+    },\n    params={\"dataString\": csv_data}\n)\n```\n\n**Key differences**:\n- `/buckets/{bucket}/tables-async`:\
+    \ Creates new table, requires `name` parameter\n- `/tables/{table_id}/import-async`:\
+    \ Imports to existing table, supports `incremental` parameter\n"
   format: markdown
