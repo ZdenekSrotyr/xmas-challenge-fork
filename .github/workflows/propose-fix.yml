@@ -396,11 +396,8 @@ jobs:
           branch_name="fix/issue-${{ github.event.inputs.issue_number }}-$(date +%s)"
           git checkout -b "$branch_name"
 
-          # Remove metadata file (should not be committed)
-          rm -f fix_proposal.json
-
-          # Stage changes
-          git add -A
+          # Stage only documentation changes (not metadata files)
+          git add docs/ .github/ *.md || true
 
           # Check if there are changes to commit
           if git diff --staged --quiet; then
