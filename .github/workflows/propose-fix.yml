@@ -220,6 +220,11 @@ jobs:
           5. Maintain the existing documentation style and formatting
           6. Include code examples where appropriate
           7. Ensure changes are backward compatible where possible
+          8. **IMPORTANT**: pr_title MUST start with one of these prefixes:
+             - "docs:" for documentation changes (most common)
+             - "chore:" for maintenance tasks
+             - "style:" for formatting/style changes
+             Example: "docs: Fix HTTP method error in Storage API"
 
           Respond with ONLY valid JSON, no markdown formatting."""
 
