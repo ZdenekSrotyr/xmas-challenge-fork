@@ -17,6 +17,9 @@ including API usage, best practices, and common pitfalls.
 - User needs help with Keboola Jobs API
 - User asks about regional stacks or Stack URLs
 - User encounters Keboola-related errors
+- User wants to create Custom Python components/transformations
+- User asks about component deployment or Docker
+- User needs help with keboola.component library
 
 ---
 
@@ -351,6 +354,380 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+
+---
+
+---
+
+<!-- Source: 04-custom-python-components.md -->
+
+# Custom Python Components
+
+## Overview
+
+For complex transformations and custom logic, you can build Custom Python Components using the `keboola.component` library. These components run as Docker containers in Keboola and can read from Storage, process data, and write back results.
+
+**When to use Custom Python Components:**
+- Complex data transformations requiring custom Python libraries
+- Need for state management (incremental loads)
+- Integration with external APIs requiring custom logic
+- Reusable transformation logic across multiple projects
+
+**For comprehensive component development, see:** `claude/component-developer/`
+
+## Component Structure
+
+### Basic Directory Structure
+
+```
+my-component/
+├── src/
+│   └── component.py          # Main component logic
+├── tests/
+│   └── test_component.py
+├── data/                      # Local testing data
+│   ├── in/
+│   │   └── tables/
+│   │       └── source.csv
+│   ├── out/
+│   │   └── tables/
+│   └── config.json
+├── Dockerfile
+├── requirements.txt
+└── component_config/
+    └── component.json         # Configuration schema
+```
+
+### Component Code Example
+
+```python
+import csv
+from keboola.component.base import ComponentBase
+from keboola.component.exceptions import UserException
+
+class Component(ComponentBase):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        # Get parameters from config
+        params = self.configuration.parameters
+        multiplier = params.get('multiplier', 1)
+
+        # Get input table
+        input_tables = self.get_input_tables_definitions()
+        if not input_tables:
+            raise UserException("No input tables found")
+
+        input_table = input_tables[0]
+
+        # Process data
+        output_data = []
+        with open(input_table.full_path, 'r') as input_file:
+            reader = csv.DictReader(input_file)
+            for row in reader:
+                # Transform data
+                row['value'] = int(row['value']) * multiplier
+                output_data.append(row)
+
+        # Write output
+        output_table_path = self.create_out_table_definition(
+            'result.csv',
+            incremental=False,
+            primary_key=['id']
+        )
+
+        with open(output_table_path.full_path, 'w', newline='') as output_file:
+            if output_data:
+                writer = csv.DictWriter(output_file, fieldnames=output_data[0].keys())
+                writer.writeheader()
+                writer.writerows(output_data)
+
+if __name__ == "__main__":
+    try:
+        comp = Component()
+        comp.run()
+    except UserException as exc:
+        comp.logger.error(exc)
+        exit(1)
+    except Exception as exc:
+        comp.logger.exception(exc)
+        exit(2)
+```
+
+## Input/Output Mapping
+
+### Configuration Format
+
+```json
+{
+  "parameters": {
+    "multiplier": 2
+  },
+  "storage": {
+    "input": {
+      "tables": [
+        {
+          "source": "in.c-main.source-table",
+          "destination": "source.csv"
+        }
+      ]
+    },
+    "output": {
+      "tables": [
+        {
+          "source": "result.csv",
+          "destination": "out.c-main.result-table",
+          "incremental": false,
+          "primary_key": ["id"]
+        }
+      ]
+    }
+  }
+}
+```
+
+### Accessing Input Tables
+
+```python
+# Get all input tables
+input_tables = self.get_input_tables_definitions()
+
+# Access specific table
+for table in input_tables:
+    print(f"Table: {table.name}")
+    print(f"Path: {table.full_path}")
+    print(f"Columns: {table.columns}")
+```
+
+### Creating Output Tables
+
+```python
+# Create output table with manifest
+output_table = self.create_out_table_definition(
+    'output.csv',
+    incremental=False,
+    primary_key=['id'],
+    columns=['id', 'name', 'value']
+)
+
+# Write data
+with open(output_table.full_path, 'w') as f:
+    writer = csv.writer(f)
+    writer.writerow(['id', 'name', 'value'])
+    writer.writerow([1, 'foo', 100])
+```
+
+## Manifest Files
+
+Manifest files describe table metadata. They are automatically created when using `create_out_table_definition()`:
+
+```json
+{
+  "destination": "out.c-main.result",
+  "incremental": false,
+  "primary_key": ["id"],
+  "columns": ["id", "name", "value"],
+  "delimiter": ",",
+  "enclosure": "\""
+}
+```
+
+## Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /code
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy component code
+COPY src/ /code/src/
+
+# Run component
+CMD ["python", "-u", "/code/src/component.py"]
+```
+
+## Local Testing
+
+### Setup Test Data
+
+```bash
+# Create directory structure
+mkdir -p data/in/tables data/out/tables
+
+# Add test CSV
+echo "id,name,value" > data/in/tables/source.csv
+echo "1,foo,100" >> data/in/tables/source.csv
+echo "2,bar,200" >> data/in/tables/source.csv
+
+# Create config
+cat > data/config.json << EOF
+{
+  "parameters": {
+    "multiplier": 2
+  }
+}
+EOF
+```
+
+### Run Locally
+
+```bash
+# Set environment variables
+export KBC_DATADIR="./data"
+
+# Run component
+python src/component.py
+
+# Check output
+cat data/out/tables/result.csv
+```
+
+### Run with Docker
+
+```bash
+# Build image
+docker build -t my-component .
+
+# Run container
+docker run --rm \
+  -v $(pwd)/data:/data \
+  -e KBC_DATADIR=/data \
+  my-component
+```
+
+## State Management
+
+For incremental loads, use state files:
+
+```python
+from datetime import datetime
+
+class Component(ComponentBase):
+    def run(self):
+        # Load previous state
+        state = self.get_state_file()
+        last_run = state.get('last_run', '2000-01-01')
+
+        # Process only new data
+        # ... processing logic ...
+
+        # Save new state
+        self.write_state_file({
+            'last_run': datetime.now().isoformat()
+        })
+```
+
+## Deployment
+
+### Using Developer Portal
+
+1. Register component via API:
+
+```python
+import requests
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/dev-branches/default/components",
+    headers={"X-StorageApi-Token": token},
+    json={
+        "id": "my-org.my-component",
+        "type": "transformation",
+        "name": "My Component",
+        "repository": {
+            "type": "github",
+            "url": "https://github.com/my-org/my-component",
+            "tag": "1.0.0"
+        }
+    }
+)
+```
+
+2. Push to GitHub with proper tags
+3. Keboola builds Docker image automatically
+4. Component becomes available in your project
+
+### GitHub Repository Setup
+
+```yaml
+# .github/workflows/build.yml
+name: Build
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build and push
+        run: |
+          docker build -t my-component:${GITHUB_REF#refs/tags/} .
+          # Keboola pulls from your repository
+```
+
+## Common Component Patterns
+
+### Error Handling
+
+```python
+from keboola.component.exceptions import UserException
+
+try:
+    result = process_data(input_data)
+except ValueError as e:
+    # User-facing error (shown in Keboola UI)
+    raise UserException(f"Invalid data format: {e}")
+except Exception as e:
+    # System error (triggers alert)
+    raise
+```
+
+### Logging
+
+```python
+class Component(ComponentBase):
+    def run(self):
+        self.logging.info("Starting processing")
+        self.logging.debug(f"Config: {self.configuration.parameters}")
+        self.logging.warning("Found duplicate records")
+        self.logging.error("Failed to process row")
+```
+
+### Configuration Schema
+
+Define schema in `component_config/component.json`:
+
+```json
+{
+  "type": "object",
+  "required": ["multiplier"],
+  "properties": {
+    "multiplier": {
+      "type": "integer",
+      "title": "Multiplier",
+      "description": "Value to multiply by",
+      "minimum": 1
+    }
+  }
+}
+```
+
+## Related Documentation
+
+For comprehensive component development:
+- **Component Architecture**: `claude/component-developer/guides/component-builder/architecture.md`
+- **Testing Guide**: `claude/component-developer/guides/component-builder/running-and-testing.md`
+- **Developer Portal**: `claude/component-developer/guides/component-builder/developer-portal.md`
+- **Cookiecutter Template**: https://github.com/keboola/cookiecutter-python-component
 
 
 ---
