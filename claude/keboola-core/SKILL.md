@@ -107,38 +107,62 @@ for table in tables:
 ### Export Table Data
 
 ```python
-# Get table export URL
-response = requests.get(
+import requests
+import time
+import os
+
+# Initiate table export (requires POST, not GET)
+response = requests.post(
     f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
     headers={"X-StorageApi-Token": token}
 )
+response.raise_for_status()
 
 job_id = response.json()["id"]
 
-# Poll for completion
-import time
-while True:
+# Poll for completion with proper error handling
+max_attempts = 150  # 5 minutes with 2-second intervals
+attempt = 0
+
+while attempt < max_attempts:
     job_response = requests.get(
         f"https://{stack_url}/v2/storage/jobs/{job_id}",
         headers={"X-StorageApi-Token": token}
     )
+    job_response.raise_for_status()
 
     job = job_response.json()
-    if job["status"] in ["success", "error"]:
+    
+    if job["status"] == "success":
         break
-
+    elif job["status"] in ["error", "cancelled", "terminated"]:
+        error_msg = job.get("error", {}).get("message", "Unknown error")
+        raise Exception(f"Job {job_id} failed with status '{job['status']}': {error_msg}")
+    
     time.sleep(2)
+    attempt += 1
 
-# Download data
+if attempt >= max_attempts:
+    raise TimeoutError(f"Job {job_id} did not complete within timeout")
+
+# Download exported file
 if job["status"] == "success":
     file_url = job["results"]["file"]["url"]
     data_response = requests.get(file_url)
-
-    import csv
-    import io
-
-    reader = csv.DictReader(io.StringIO(data_response.text))
-    data = list(reader)
+    data_response.raise_for_status()
+    
+    # Save to local file
+    output_file = "exported_table.csv"
+    with open(output_file, "wb") as f:
+        f.write(data_response.content)
+    
+    print(f"Table exported successfully to {output_file}")
+    
+    # Optional: Load into memory if needed
+    # import csv
+    # import io
+    # reader = csv.DictReader(io.StringIO(data_response.text))
+    # data = list(reader)
 ```
 
 ## Writing Tables
@@ -242,24 +266,47 @@ stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
 **Solution**: Always poll until job finishes:
 
 ```python
-def wait_for_job(job_id, timeout=300):
-    """Wait for job completion with timeout."""
+def wait_for_job(job_id, timeout=300, poll_interval=2):
+    """Wait for job completion with timeout and comprehensive error handling.
+    
+    Args:
+        job_id: Keboola job ID
+        timeout: Maximum time to wait in seconds
+        poll_interval: Seconds between status checks
+        
+    Returns:
+        dict: Job details on success
+        
+    Raises:
+        Exception: If job fails, is cancelled, or terminated
+        TimeoutError: If job doesn't complete within timeout
+    """
     start = time.time()
 
     while time.time() - start < timeout:
-        response = requests.get(
-            f"https://{stack_url}/v2/storage/jobs/{job_id}",
-            headers={"X-StorageApi-Token": token}
-        )
+        try:
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=30
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Warning: Failed to check job status: {e}")
+            time.sleep(poll_interval)
+            continue
 
         job = response.json()
 
         if job["status"] == "success":
             return job
-        elif job["status"] == "error":
-            raise Exception(f"Job failed: {job.get('error', {}).get('message')}")
-
-        time.sleep(2)
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(
+                f"Job {job_id} failed with status '{job['status']}': {error_msg}"
+            )
+        # Job is still processing (status: waiting, processing)
+        time.sleep(poll_interval)
 
     raise TimeoutError(f"Job {job_id} did not complete in {timeout}s")
 ```
@@ -368,3 +415,131 @@ def safe_api_call(url, headers):
 ---
 
 **End of Skill**
+
+
+## 6. Wrong HTTP Method for Async Operations
+
+**Problem**: Using GET instead of POST for async export endpoints
+
+**Solution**: Always use POST for export-async endpoints:
+
+```python
+# ❌ WRONG - This will fail with 405 Method Not Allowed
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+
+# ✅ CORRECT - Use POST for async operations
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+response.raise_for_status()
+```
+
+**Rule of thumb**: Endpoints ending in `-async` typically require POST to initiate the job.
+
+
+
+### Complete Example: Export and Save Table
+
+Here's a complete, production-ready example for exporting a table to a local file:
+
+```python
+import requests
+import time
+import os
+from typing import Optional
+
+def export_table_to_file(
+    table_id: str,
+    output_file: str,
+    stack_url: Optional[str] = None,
+    token: Optional[str] = None
+) -> str:
+    """Export a Keboola table to a local CSV file.
+    
+    Args:
+        table_id: Table ID (e.g., 'in.c-main.customers')
+        output_file: Local file path for output
+        stack_url: Keboola stack URL (defaults to env var)
+        token: Storage API token (defaults to env var)
+        
+    Returns:
+        str: Path to exported file
+        
+    Raises:
+        ValueError: If table_id format is invalid
+        Exception: If export fails
+        TimeoutError: If export doesn't complete
+    """
+    # Get credentials from environment if not provided
+    stack_url = stack_url or os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+    token = token or os.environ["KEBOOLA_TOKEN"]
+    
+    headers = {"X-StorageApi-Token": token}
+    
+    # Validate table ID format
+    import re
+    if not re.match(r'^(in|out)\.c-[a-z0-9-]+\.[a-z0-9_-]+$', table_id):
+        raise ValueError(f"Invalid table ID format: {table_id}")
+    
+    # Step 1: Initiate export (POST required)
+    print(f"Initiating export of {table_id}...")
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers=headers
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    print(f"Export job started: {job_id}")
+    
+    # Step 2: Poll for completion
+    print("Waiting for export to complete...")
+    max_attempts = 150  # 5 minutes
+    attempt = 0
+    
+    while attempt < max_attempts:
+        job_response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers=headers
+        )
+        job_response.raise_for_status()
+        job = job_response.json()
+        
+        if job["status"] == "success":
+            print("Export completed successfully")
+            break
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Export failed: {error_msg}")
+        
+        time.sleep(2)
+        attempt += 1
+    
+    if attempt >= max_attempts:
+        raise TimeoutError(f"Export did not complete within 5 minutes")
+    
+    # Step 3: Download file
+    print(f"Downloading to {output_file}...")
+    file_url = job["results"]["file"]["url"]
+    data_response = requests.get(file_url)
+    data_response.raise_for_status()
+    
+    with open(output_file, "wb") as f:
+        f.write(data_response.content)
+    
+    file_size = os.path.getsize(output_file)
+    print(f"Successfully exported {file_size:,} bytes to {output_file}")
+    
+    return output_file
+
+# Usage example
+if __name__ == "__main__":
+    export_table_to_file(
+        table_id="in.c-main.customers",
+        output_file="customers.csv"
+    )
+```
+
