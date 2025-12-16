@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T13:59:46.632638
+> Generated: 2025-12-16T14:03:10.345319
 
 ---
 
@@ -463,7 +463,7 @@ response = requests.post(
 
 ```json
 {
-  "generated_at": "2025-12-16T13:59:46.632638",
+  "generated_at": "2025-12-16T14:03:10.345319",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
