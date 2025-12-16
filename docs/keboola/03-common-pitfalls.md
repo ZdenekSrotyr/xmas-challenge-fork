@@ -130,3 +130,32 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+## 6. Using Wrong Tool for the Job
+
+**Problem**: Writing complex API code when a simpler solution exists
+
+**Solution**: Consider using the Keboola MCP Server for validation and prototyping:
+
+```python
+# ❌ WRONG - Writing API code to check if a column exists
+import requests
+
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables/{table_id}",
+    headers=headers
+)
+table_info = response.json()
+column_exists = any(col["name"] == "customer_id" for col in table_info["columns"])
+
+# ✅ BETTER - Use MCP Server for quick validation
+# During development, use get_table tool to check schema
+# Then write production code only for actual data processing
+```
+
+**When to use what:**
+- **MCP Server**: Schema validation, prototyping queries, debugging
+- **Storage API**: Production pipelines, large datasets, batch processing
+- **Components**: Complex logic, scheduled operations, reusable transformations
+
+See [MCP Server vs Direct API](04-mcp-vs-api.md) for detailed guidance.

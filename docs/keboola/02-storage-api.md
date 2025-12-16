@@ -1,5 +1,15 @@
 # Storage API
 
+## Overview
+
+The Storage API provides direct HTTP access to Keboola data and operations. Use it for:
+- Production data pipelines
+- Large-scale data processing
+- Batch operations
+- Custom integrations
+
+**For prototyping and validation**, consider using the [Keboola MCP Server](04-mcp-vs-api.md) instead, which provides interactive tools without writing code.
+
 ## Reading Tables
 
 ### List All Tables

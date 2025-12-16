@@ -21,6 +21,20 @@ Components are the building blocks:
 - **Transformations**: Process and modify data
 - **Writers**: Send data to external destinations
 
+### MCP Server
+
+Keboola provides an MCP (Model Context Protocol) server for interactive access to platform features:
+- **Validation**: Check table schemas and data before writing code
+- **Prototyping**: Test SQL queries with small datasets
+- **Debugging**: Inspect jobs and configurations
+- **Exploration**: Browse tables and discover data
+
+**When to use**: Development, debugging, and quick validation tasks.
+
+For production pipelines and large datasets, use the Storage API directly (see below).
+
+See [MCP Server vs Direct API](04-mcp-vs-api.md) for detailed comparison and usage guidance.
+
 ## Authentication
 
 Use Storage API tokens for authentication:
