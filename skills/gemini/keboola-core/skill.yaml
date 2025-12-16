@@ -1,0 +1,113 @@
+name: keboola-core
+version: 1.0.0
+description: Keboola platform knowledge for Gemini
+metadata:
+  generated_at: '2025-12-16T04:43:42.602477'
+  source_path: docs/keboola
+  generator: gemini_generator.py v1.0
+  poc_notice: This is a POC. Not production-ready.
+knowledge_base:
+- source: 01-core-concepts.md
+  content: "# Core Concepts\n\n## Overview\n\nKeboola is a cloud-based data platform\
+    \ that enables you to extract, transform, and load data from various sources.\n\
+    \n## Key Concepts\n\n### Project\nA project is the top-level container in Keboola.\
+    \ All your configurations, data, and orchestrations belong to a project.\n\n###\
+    \ Storage\nKeboola Storage is where your data lives. It consists of:\n- **Buckets**:\
+    \ Logical containers for tables\n- **Tables**: The actual data\n- **Files**: Temporary\
+    \ file storage\n\n### Components\nComponents are the building blocks:\n- **Extractors**:\
+    \ Pull data from external sources\n- **Transformations**: Process and modify data\n\
+    - **Writers**: Send data to external destinations\n\n## Authentication\n\nUse\
+    \ Storage API tokens for authentication:\n\n```python\nimport os\nimport requests\n\
+    \nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"\
+    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\"\
+    : STORAGE_TOKEN,\n    \"Content-Type\": \"application/json\"\n}\n\nresponse =\
+    \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n\
+    )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
+    \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
+    - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
+    \ stack URL, not a hardcoded one.\n"
+  format: markdown
+- source: 02-storage-api.md
+  content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\
+    import requests\nimport os\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\"\
+    , \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\n\nresponse\
+    \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
+    X-StorageApi-Token\": token}\n)\n\ntables = response.json()\nfor table in tables:\n\
+    \    print(f\"{table['id']}: {table['rowsCount']} rows\")\n```\n\n### Export Table\
+    \ Data\n\n```python\n# Get table export URL\nresponse = requests.get(\n    f\"\
+    https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n    headers={\"\
+    X-StorageApi-Token\": token}\n)\n\njob_id = response.json()[\"id\"]\n\n# Poll\
+    \ for completion\nimport time\nwhile True:\n    job_response = requests.get(\n\
+    \        f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n        headers={\"\
+    X-StorageApi-Token\": token}\n    )\n\n    job = job_response.json()\n    if job[\"\
+    status\"] in [\"success\", \"error\"]:\n        break\n\n    time.sleep(2)\n\n\
+    # Download data\nif job[\"status\"] == \"success\":\n    file_url = job[\"results\"\
+    ][\"file\"][\"url\"]\n    data_response = requests.get(file_url)\n\n    import\
+    \ csv\n    import io\n\n    reader = csv.DictReader(io.StringIO(data_response.text))\n\
+    \    data = list(reader)\n```\n\n## Writing Tables\n\n### Create Table from CSV\n\
+    \n```python\n# Upload CSV file\ncsv_data = \"id,name,value\\n1,foo,100\\n2,bar,200\"\
+    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"text/csv\"\n    },\n    params={\n        \"name\": \"my_table\",\n      \
+    \  \"dataString\": csv_data\n    }\n)\n\njob_id = response.json()[\"id\"]\n# Poll\
+    \ job until completion (same as above)\n```\n\n## Common Patterns\n\n### Pagination\n\
+    \nLarge tables should be exported in chunks:\n\n```python\ndef export_table_paginated(table_id,\
+    \ chunk_size=10000):\n    \"\"\"Export table in chunks.\"\"\"\n    offset = 0\n\
+    \    all_data = []\n\n    while True:\n        response = requests.get(\n    \
+    \        f\"https://{stack_url}/v2/storage/tables/{table_id}/data-preview\",\n\
+    \            headers={\"X-StorageApi-Token\": token},\n            params={\n\
+    \                \"limit\": chunk_size,\n                \"offset\": offset\n\
+    \            }\n        )\n\n        chunk = response.json()\n        if not chunk:\n\
+    \            break\n\n        all_data.extend(chunk)\n        offset += chunk_size\n\
+    \n    return all_data\n```\n\n### Incremental Loads\n\nUse changed_since parameter\
+    \ for incremental updates:\n\n```python\nfrom datetime import datetime, timedelta\n\
+    \n# Get data changed in last 24 hours\nyesterday = (datetime.now() - timedelta(days=1)).isoformat()\n\
+    \nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\"changedSince\"\
+    : yesterday}\n)\n```\n"
+  format: markdown
+- source: 03-common-pitfalls.md
+  content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
+    \ `connection.keboola.com` for all projects\n\n**Solution**: Always use environment\
+    \ variables:\n\n```python\n# ❌ WRONG\nstack_url = \"connection.keboola.com\"\n\
+    \n# ✅ CORRECT\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
+    )\n```\n\n## 2. Not Handling Job Polling\n\n**Problem**: Assuming async operations\
+    \ complete immediately\n\n**Solution**: Always poll until job finishes:\n\n```python\n\
+    def wait_for_job(job_id, timeout=300):\n    \"\"\"Wait for job completion with\
+    \ timeout.\"\"\"\n    start = time.time()\n\n    while time.time() - start < timeout:\n\
+    \        response = requests.get(\n            f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n\n        job\
+    \ = response.json()\n\n        if job[\"status\"] == \"success\":\n          \
+    \  return job\n        elif job[\"status\"] == \"error\":\n            raise Exception(f\"\
+    Job failed: {job.get('error', {}).get('message')}\")\n\n        time.sleep(2)\n\
+    \n    raise TimeoutError(f\"Job {job_id} did not complete in {timeout}s\")\n```\n\
+    \n## 3. Ignoring Rate Limits\n\n**Problem**: Making too many API calls too quickly\n\
+    \n**Solution**: Implement exponential backoff:\n\n```python\nimport time\nfrom\
+    \ requests.exceptions import HTTPError\n\ndef api_call_with_retry(url, headers,\
+    \ max_retries=3):\n    \"\"\"Make API call with exponential backoff.\"\"\"\n \
+    \   for attempt in range(max_retries):\n        try:\n            response = requests.get(url,\
+    \ headers=headers)\n            response.raise_for_status()\n            return\
+    \ response.json()\n\n        except HTTPError as e:\n            if e.response.status_code\
+    \ == 429:  # Rate limited\n                wait_time = 2 ** attempt\n        \
+    \        print(f\"Rate limited. Waiting {wait_time}s...\")\n                time.sleep(wait_time)\n\
+    \            else:\n                raise\n\n    raise Exception(\"Max retries\
+    \ exceeded\")\n```\n\n## 4. Not Validating Table IDs\n\n**Problem**: Using invalid\
+    \ table ID format\n\n**Solution**: Validate format before API calls:\n\n```python\n\
+    import re\n\ndef validate_table_id(table_id):\n    \"\"\"Validate Keboola table\
+    \ ID format.\"\"\"\n    pattern = r'^(in|out)\\.c-[a-z0-9-]+\\.[a-z0-9_-]+$'\n\
+    \n    if not re.match(pattern, table_id):\n        raise ValueError(\n       \
+    \     f\"Invalid table ID: {table_id}. \"\n            f\"Expected format: stage.c-bucket.table\"\
+    \n        )\n\n    return True\n\n# Usage\nvalidate_table_id(\"in.c-main.customers\"\
+    )  # ✓\nvalidate_table_id(\"my_table\")  # ✗ Raises ValueError\n```\n\n## 5. Missing\
+    \ Error Handling\n\n**Problem**: Not handling API errors gracefully\n\n**Solution**:\
+    \ Always check response status:\n\n```python\ndef safe_api_call(url, headers):\n\
+    \    \"\"\"Make API call with proper error handling.\"\"\"\n    try:\n       \
+    \ response = requests.get(url, headers=headers, timeout=30)\n        response.raise_for_status()\n\
+    \n        return response.json()\n\n    except requests.exceptions.Timeout:\n\
+    \        print(\"Request timed out\")\n        return None\n\n    except requests.exceptions.HTTPError\
+    \ as e:\n        if e.response.status_code == 401:\n            print(\"Invalid\
+    \ token\")\n        elif e.response.status_code == 404:\n            print(\"\
+    Resource not found\")\n        else:\n            print(f\"HTTP error: {e}\")\n\
+    \        return None\n\n    except Exception as e:\n        print(f\"Unexpected\
+    \ error: {e}\")\n        return None\n```\n"
+  format: markdown
