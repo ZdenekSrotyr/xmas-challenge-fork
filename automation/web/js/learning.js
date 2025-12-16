@@ -36,11 +36,14 @@ export async function initLearningDashboard() {
  * Render learning statistics
  */
 function renderLearningStats(data) {
-    document.getElementById('interaction-count').textContent = data.interactions.length;
-    document.getElementById('gap-count').textContent =
-        data.interactions.filter(i => i.identified_gap).length;
-    document.getElementById('pending-count').textContent =
-        data.learnings.filter(l => l.status === 'pending').length;
+    // Support both old format (direct arrays) and new format (with metadata)
+    const interactionCount = data.metadata ? data.metadata.interaction_count : data.interactions.length;
+    const gapCount = data.interactions.filter(i => i.identified_gap).length;
+    const pendingCount = data.learnings.filter(l => l.status === 'pending').length;
+
+    document.getElementById('interaction-count').textContent = interactionCount;
+    document.getElementById('gap-count').textContent = gapCount;
+    document.getElementById('pending-count').textContent = pendingCount;
 
     // Calculate average satisfaction
     const ratings = data.interactions
