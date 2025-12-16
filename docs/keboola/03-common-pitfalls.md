@@ -130,3 +130,79 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+## 6. Incorrect Job Polling for Transformations
+
+**Problem**: Not checking all possible job statuses when running transformations
+
+**Solution**: Handle all job status values correctly:
+
+```python
+def wait_for_transformation_job(job_id, timeout=600):
+    """Wait for transformation job with proper status handling."""
+    start = time.time()
+    valid_statuses = ["success", "error", "cancelled", "terminated"]
+    processing_statuses = ["waiting", "processing", "created"]
+
+    while time.time() - start < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+
+        job = response.json()
+        status = job["status"]
+
+        if status == "success":
+            return job
+        elif status == "error":
+            error_msg = job.get("result", {}).get("message", "Unknown error")
+            raise Exception(f"Job failed: {error_msg}")
+        elif status in ["cancelled", "terminated"]:
+            raise Exception(f"Job was {status}")
+        elif status in processing_statuses:
+            # Job still running
+            time.sleep(5)
+        else:
+            # Unknown status - be cautious
+            print(f"Warning: Unknown status '{status}'")
+            time.sleep(5)
+
+    raise TimeoutError(f"Job {job_id} did not complete in {timeout}s")
+```
+
+## 7. Using Wrong Component Name for Jobs API
+
+**Problem**: Using incorrect component names when triggering jobs
+
+**Solution**: Use the correct component identifier:
+
+```python
+# ❌ WRONG - using component display name
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers=headers,
+    json={
+        "component": "Snowflake Transformation",  # Wrong!
+        "config": config_id
+    }
+)
+
+# ✅ CORRECT - using component ID
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers=headers,
+    json={
+        "component": "transformation",  # Correct
+        "config": config_id,
+        "mode": "run"
+    }
+)
+
+# Common component IDs:
+# - "transformation" for transformations
+# - "orchestrator" for orchestrations
+# - "keboola.ex-db-snowflake" for Snowflake extractor
+# - "keboola.wr-db-snowflake" for Snowflake writer
+```

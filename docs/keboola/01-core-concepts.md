@@ -21,6 +21,18 @@ Components are the building blocks:
 - **Transformations**: Process and modify data
 - **Writers**: Send data to external destinations
 
+### Jobs
+Jobs represent asynchronous operations in Keboola. When you trigger a transformation, extractor, or writer, a job is created. Jobs have statuses:
+- **created**: Job is initialized
+- **waiting**: Job is queued
+- **processing**: Job is running
+- **success**: Job completed successfully
+- **error**: Job failed
+- **cancelled**: Job was cancelled
+- **terminated**: Job was forcefully terminated
+
+Always poll job status when running components programmatically. See [Jobs API documentation](04-jobs-api.md) for details.
+
 ## Authentication
 
 Use Storage API tokens for authentication:

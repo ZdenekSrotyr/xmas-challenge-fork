@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T04:43:42.602477'
+  generated_at: '2025-12-16T14:00:14.337888'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -16,14 +16,20 @@ knowledge_base:
     \ Logical containers for tables\n- **Tables**: The actual data\n- **Files**: Temporary\
     \ file storage\n\n### Components\nComponents are the building blocks:\n- **Extractors**:\
     \ Pull data from external sources\n- **Transformations**: Process and modify data\n\
-    - **Writers**: Send data to external destinations\n\n## Authentication\n\nUse\
-    \ Storage API tokens for authentication:\n\n```python\nimport os\nimport requests\n\
-    \nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"\
-    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\"\
-    : STORAGE_TOKEN,\n    \"Content-Type\": \"application/json\"\n}\n\nresponse =\
-    \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n\
-    )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
-    \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
+    - **Writers**: Send data to external destinations\n\n### Jobs\nJobs represent\
+    \ asynchronous operations in Keboola. When you trigger a transformation, extractor,\
+    \ or writer, a job is created. Jobs have statuses:\n- **created**: Job is initialized\n\
+    - **waiting**: Job is queued\n- **processing**: Job is running\n- **success**:\
+    \ Job completed successfully\n- **error**: Job failed\n- **cancelled**: Job was\
+    \ cancelled\n- **terminated**: Job was forcefully terminated\n\nAlways poll job\
+    \ status when running components programmatically. See [Jobs API documentation](04-jobs-api.md)\
+    \ for details.\n\n## Authentication\n\nUse Storage API tokens for authentication:\n\
+    \n```python\nimport os\nimport requests\n\nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"\
+    ]\nSTACK_URL = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
+    )\n\nheaders = {\n    \"X-StorageApi-Token\": STORAGE_TOKEN,\n    \"Content-Type\"\
+    : \"application/json\"\n}\n\nresponse = requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\"\
+    ,\n    headers=headers\n)\n```\n\n## Regional Stacks\n\nKeboola operates multiple\
+    \ regional stacks:\n- **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
     - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
     \ stack URL, not a hardcoded one.\n"
   format: markdown
@@ -109,5 +115,34 @@ knowledge_base:
     \ token\")\n        elif e.response.status_code == 404:\n            print(\"\
     Resource not found\")\n        else:\n            print(f\"HTTP error: {e}\")\n\
     \        return None\n\n    except Exception as e:\n        print(f\"Unexpected\
-    \ error: {e}\")\n        return None\n```\n"
+    \ error: {e}\")\n        return None\n```\n\n## 6. Incorrect Job Polling for Transformations\n\
+    \n**Problem**: Not checking all possible job statuses when running transformations\n\
+    \n**Solution**: Handle all job status values correctly:\n\n```python\ndef wait_for_transformation_job(job_id,\
+    \ timeout=600):\n    \"\"\"Wait for transformation job with proper status handling.\"\
+    \"\"\n    start = time.time()\n    valid_statuses = [\"success\", \"error\", \"\
+    cancelled\", \"terminated\"]\n    processing_statuses = [\"waiting\", \"processing\"\
+    , \"created\"]\n\n    while time.time() - start < timeout:\n        response =\
+    \ requests.get(\n            f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n        response.raise_for_status()\n\
+    \n        job = response.json()\n        status = job[\"status\"]\n\n        if\
+    \ status == \"success\":\n            return job\n        elif status == \"error\"\
+    :\n            error_msg = job.get(\"result\", {}).get(\"message\", \"Unknown\
+    \ error\")\n            raise Exception(f\"Job failed: {error_msg}\")\n      \
+    \  elif status in [\"cancelled\", \"terminated\"]:\n            raise Exception(f\"\
+    Job was {status}\")\n        elif status in processing_statuses:\n           \
+    \ # Job still running\n            time.sleep(5)\n        else:\n            #\
+    \ Unknown status - be cautious\n            print(f\"Warning: Unknown status '{status}'\"\
+    )\n            time.sleep(5)\n\n    raise TimeoutError(f\"Job {job_id} did not\
+    \ complete in {timeout}s\")\n```\n\n## 7. Using Wrong Component Name for Jobs\
+    \ API\n\n**Problem**: Using incorrect component names when triggering jobs\n\n\
+    **Solution**: Use the correct component identifier:\n\n```python\n# ❌ WRONG -\
+    \ using component display name\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/jobs\"\
+    ,\n    headers=headers,\n    json={\n        \"component\": \"Snowflake Transformation\"\
+    ,  # Wrong!\n        \"config\": config_id\n    }\n)\n\n# ✅ CORRECT - using component\
+    \ ID\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/jobs\"\
+    ,\n    headers=headers,\n    json={\n        \"component\": \"transformation\"\
+    ,  # Correct\n        \"config\": config_id,\n        \"mode\": \"run\"\n    }\n\
+    )\n\n# Common component IDs:\n# - \"transformation\" for transformations\n# -\
+    \ \"orchestrator\" for orchestrations\n# - \"keboola.ex-db-snowflake\" for Snowflake\
+    \ extractor\n# - \"keboola.wr-db-snowflake\" for Snowflake writer\n```\n"
   format: markdown
