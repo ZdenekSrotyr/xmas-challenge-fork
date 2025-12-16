@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T14:05:33.677556'
+  generated_at: '2025-12-16T15:05:10.584945'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -216,4 +216,338 @@ knowledge_base:
     new_table\",\n        \"dataString\": csv_data\n    }\n)\n```\n\n**Rule of thumb**:\n\
     - Creating new table: `/buckets/{bucket}/tables-async`\n- Importing to existing\
     \ table: `/tables/{table_id}/import-async`\n"
+  format: markdown
+- source: 04-component-development.md
+  content: "# Component Development\n\n## Overview\n\nKeboola components are Docker\
+    \ containers that follow the Common Interface specification for processing data.\
+    \ They communicate with Keboola exclusively through the filesystem at `/data`.\n\
+    \n## Component Types\n\n- **Extractors**: Pull data from external sources\n- **Writers**:\
+    \ Send data to external destinations\n- **Applications**: Process or transform\
+    \ data\n\nNote: Don't include component type names ('extractor', 'writer', 'application')\
+    \ in the component name itself.\n\n## Project Structure\n\n```\nmy-component/\n\
+    ├── src/\n│   ├── component.py          # Main logic with run() function\n│  \
+    \ └── configuration.py      # Configuration validation\n├── component_config/\n\
+    │   ├── component_config.json           # Configuration schema\n│   ├── component_long_description.md\
+    \   # Detailed docs\n│   └── component_short_description.md  # Brief description\n\
+    ├── tests/\n│   └── test_component.py     # Unit tests\n├── data/            \
+    \         # Local data folder (gitignored)\n│   ├── config.json           # Example\
+    \ config for local testing\n│   ├── in/                   # Input tables and files\n\
+    │   └── out/                  # Output tables and files\n├── .github/workflows/\n\
+    │   └── push.yml              # CI/CD deployment\n├── Dockerfile             \
+    \   # Container definition\n└── pyproject.toml            # Python dependencies\n\
+    ```\n\n## Data Folder Contract\n\nComponents communicate with Keboola through\
+    \ the `/data` directory:\n\n**INPUT** (read-only):\n- `config.json` - Component\
+    \ configuration from UI\n- `in/tables/*.csv` - Input tables with `.manifest` files\n\
+    - `in/files/*` - Input files\n- `in/state.json` - Previous run state (for incremental\
+    \ processing)\n\n**OUTPUT** (write):\n- `out/tables/*.csv` - Output tables with\
+    \ `.manifest` files\n- `out/files/*` - Output files\n- `out/state.json` - New\
+    \ state for next run\n\n**IMPORTANT**: The Keboola platform automatically creates\
+    \ all data directories (`data/in/`, `data/out/tables/`, `data/out/files/`, etc.).\
+    \ You **never** need to call `mkdir()` or create these directories manually in\
+    \ your component code.\n\n## Basic Component Implementation\n\n```python\nfrom\
+    \ keboola.component import CommonInterface\nimport logging\nimport sys\nimport\
+    \ traceback\n\nREQUIRED_PARAMETERS = ['api_key', 'endpoint']\n\nclass Component(CommonInterface):\n\
+    \    def __init__(self):\n        super().__init__()\n\n    def run(self):\n \
+    \       try:\n            # 1. Validate configuration\n            self.validate_configuration(REQUIRED_PARAMETERS)\n\
+    \            params = self.configuration.parameters\n\n            # 2. Load state\
+    \ for incremental processing\n            state = self.get_state_file()\n    \
+    \        last_timestamp = state.get('last_timestamp')\n\n            # 3. Process\
+    \ input tables\n            input_tables = self.get_input_tables_definitions()\n\
+    \            for table in input_tables:\n                self._process_table(table)\n\
+    \n            # 4. Create output tables with manifests\n            self._create_output_tables()\n\
+    \n            # 5. Save state for next run\n            self.write_state_file({\n\
+    \                'last_timestamp': current_timestamp\n            })\n\n     \
+    \   except ValueError as err:\n            # User errors (configuration/input\
+    \ issues)\n            logging.error(str(err))\n            print(err, file=sys.stderr)\n\
+    \            sys.exit(1)\n        except Exception as err:\n            # System\
+    \ errors (unhandled exceptions)\n            logging.exception(\"Unhandled error\
+    \ occurred\")\n            traceback.print_exc(file=sys.stderr)\n            sys.exit(2)\n\
+    \nif __name__ == '__main__':\n    try:\n        comp = Component()\n        comp.run()\n\
+    \    except Exception as e:\n        logging.exception(\"Component execution failed\"\
+    )\n        sys.exit(2)\n```\n\n## Configuration Schema\n\nDefine configuration\
+    \ parameters in `component_config/component_config.json`:\n\n```json\n{\n  \"\
+    type\": \"object\",\n  \"title\": \"Configuration\",\n  \"required\": [\"api_key\"\
+    , \"endpoint\"],\n  \"properties\": {\n    \"#api_key\": {\n      \"type\": \"\
+    string\",\n      \"title\": \"API Key\",\n      \"description\": \"Your API authentication\
+    \ token\",\n      \"format\": \"password\"\n    },\n    \"endpoint\": {\n    \
+    \  \"type\": \"string\",\n      \"title\": \"API Endpoint\",\n      \"description\"\
+    : \"Base URL for the API\"\n    },\n    \"incremental\": {\n      \"type\": \"\
+    boolean\",\n      \"title\": \"Incremental Load\",\n      \"description\": \"\
+    Only fetch data since last run\",\n      \"default\": false\n    }\n  }\n}\n```\n\
+    \n### Sensitive Data Handling\n\nPrefix parameter names with `#` to enable automatic\
+    \ hashing:\n```json\n{\n  \"#password\": {\n    \"type\": \"string\",\n    \"\
+    title\": \"Password\",\n    \"format\": \"password\"\n  }\n}\n```\n\n### UI Elements\n\
+    \n**Code Editor** (ACE editor for multi-line input):\n```json\n{\n  \"query\"\
+    : {\n    \"type\": \"string\",\n    \"title\": \"SQL Query\",\n    \"format\"\
+    : \"textarea\",\n    \"options\": {\n      \"ace\": {\n        \"mode\": \"sql\"\
+    \n      }\n    }\n  }\n}\n```\n\n**Test Connection Button**:\n```json\n{\n  \"\
+    test_connection\": {\n    \"type\": \"button\",\n    \"title\": \"Test Connection\"\
+    ,\n    \"options\": {\n      \"syncAction\": \"test-connection\"\n    }\n  }\n\
+    }\n```\n\n## CSV Processing\n\nAlways process CSV files efficiently using generators:\n\
+    \n```python\nimport csv\n\ndef process_input_table(table_def):\n    with open(table_def.full_path,\
+    \ 'r', encoding='utf-8') as in_file:\n        # Handle null characters with generator\n\
+    \        lazy_lines = (line.replace('\\0', '') for line in in_file)\n        reader\
+    \ = csv.DictReader(lazy_lines, dialect='kbc')\n\n        for row in reader:\n\
+    \            # Process row by row for memory efficiency\n            yield process_row(row)\n\
+    ```\n\n## Creating Output Tables\n\nCreate output tables with proper schema definitions:\n\
+    \n```python\nfrom collections import OrderedDict\nfrom keboola.component.dao import\
+    \ ColumnDefinition, BaseType\n\n# Define schema\nschema = OrderedDict({\n    \"\
+    id\": ColumnDefinition(\n        data_types=BaseType.integer(),\n        primary_key=True\n\
+    \    ),\n    \"name\": ColumnDefinition(),\n    \"value\": ColumnDefinition(\n\
+    \        data_types=BaseType.numeric(length=\"10,2\")\n    )\n})\n\n# Create table\
+    \ definition\nout_table = self.create_out_table_definition(\n    name=\"results.csv\"\
+    ,\n    destination=\"out.c-data.results\",\n    schema=schema,\n    incremental=True\n\
+    )\n\n# Write data\nimport csv\nwith open(out_table.full_path, 'w', newline='',\
+    \ encoding='utf-8') as f:\n    writer = csv.DictWriter(f, fieldnames=out_table.column_names)\n\
+    \    writer.writeheader()\n    for row in data:\n        writer.writerow(row)\n\
+    \n# Write manifest\nself.write_manifest(out_table)\n```\n\n## State Management\
+    \ for Incremental Processing\n\nImplement proper state handling for incremental\
+    \ loads:\n\n```python\ndef run_incremental(self):\n    # Load previous state\n\
+    \    state = self.get_state_file()\n    last_timestamp = state.get('last_timestamp',\
+    \ '1970-01-01T00:00:00Z')\n\n    # Fetch only new data since last_timestamp\n\
+    \    new_data = self._fetch_data_since(last_timestamp)\n\n    # Process and save\
+    \ data\n    self._process_data(new_data)\n\n    # Update state with current timestamp\n\
+    \    from datetime import datetime, timezone\n    current_timestamp = datetime.now(timezone.utc).isoformat()\n\
+    \    self.write_state_file({\n        'last_timestamp': current_timestamp,\n \
+    \       'records_processed': len(new_data)\n    })\n```\n\n## Error Handling\n\
+    \nFollow Keboola's error handling conventions:\n\n- **Exit code 1**: User errors\
+    \ (configuration problems, invalid inputs)\n- **Exit code 2**: System errors (unhandled\
+    \ exceptions, application errors)\n\n```python\ntry:\n    # Component logic\n\
+    \    validate_inputs(params)\n    result = perform_operation()\n\nexcept ValueError\
+    \ as err:\n    # User-fixable errors\n    logging.error(f\"Configuration error:\
+    \ {err}\")\n    print(err, file=sys.stderr)\n    sys.exit(1)\n\nexcept requests.HTTPError\
+    \ as err:\n    # API errors\n    logging.error(f\"API request failed: {err}\"\
+    )\n    print(f\"Failed to connect to API: {err.response.status_code}\", file=sys.stderr)\n\
+    \    sys.exit(1)\n\nexcept Exception as err:\n    # Unhandled exceptions\n   \
+    \ logging.exception(\"Unhandled error in component execution\")\n    traceback.print_exc(file=sys.stderr)\n\
+    \    sys.exit(2)\n```\n\n## Local Development\n\n### Running Locally\n\n```bash\n\
+    # Set up virtual environment\npython -m venv .venv\nsource .venv/bin/activate\n\
+    pip install -e .\n\n# Set data directory environment variable\nexport KBC_DATADIR=./data\n\
+    \n# Run component\npython src/component.py\n```\n\n### Using Docker\n\n```bash\n\
+    # Build image\ndocker build -t my-component:latest .\n\n# Run with mounted data\
+    \ folder\ndocker run --rm \\\n  -v $(pwd)/data:/data \\\n  -e KBC_DATADIR=/data\
+    \ \\\n  my-component:latest\n```\n\n### Prepare Test Data\n\nCreate `data/config.json`\
+    \ with example parameters:\n\n```json\n{\n  \"parameters\": {\n    \"api_key\"\
+    : \"your_key_here\",\n    \"#password\": \"test_password\",\n    \"from_date\"\
+    : \"2024-01-01\",\n    \"incremental\": false\n  }\n}\n```\n\nCreate sample input\
+    \ tables:\n\n```bash\nmkdir -p data/in/tables\ncat > data/in/tables/input.csv\
+    \ <<EOF\nid,name,email\n1,John Doe,john@example.com\n2,Jane Smith,jane@example.com\n\
+    EOF\n```\n\n## Best Practices\n\n### DO:\n\n- Use `CommonInterface` class for\
+    \ all Keboola interactions\n- Validate configuration early with `validate_configuration()`\n\
+    - Process CSV files with generators for memory efficiency\n- Always specify `encoding='utf-8'`\
+    \ for file operations\n- Use proper exit codes (1 for user errors, 2 for system\
+    \ errors)\n- Define explicit schemas for output tables\n- Implement state management\
+    \ for incremental processing\n- Write comprehensive tests\n- Quote all SQL identifiers\
+    \ (`\"column_name\"`, not `column_name`)\n\n### DON'T:\n\n- Load entire CSV files\
+    \ into memory\n- Hard-code configuration values\n- Skip configuration validation\n\
+    - Forget to write manifests for output tables\n- Skip state file management for\
+    \ incremental loads\n- Forget to handle null characters in CSV files\n- Call `mkdir()`\
+    \ for platform-managed directories (in/, out/, tables/, files/)\n\n## Dockerfile\n\
+    \n```dockerfile\nFROM python:3.11-alpine\n\n# Install dependencies\nWORKDIR /code\n\
+    COPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\n\
+    # Copy component code\nCOPY src/ /code/src/\n\n# Set entrypoint with unbuffered\
+    \ output\nENTRYPOINT [\"python\", \"-u\", \"/code/src/component.py\"]\n```\n\n\
+    ## CI/CD Deployment\n\n### GitHub Actions Workflow\n\n```yaml\n# .github/workflows/push.yml\n\
+    name: Build and Deploy\n\non:\n  push:\n    tags:\n      - 'v*'\n\njobs:\n  build:\n\
+    \    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n\n\
+    \      - name: Build Docker image\n        run: docker build -t my-component:${{\
+    \ github.ref_name }} .\n\n      - name: Run tests\n        run: docker-compose\
+    \ run --rm test\n\n      - name: Deploy to Keboola\n        env:\n          KBC_DEVELOPERPORTAL_USERNAME:\
+    \ ${{ secrets.KBC_USERNAME }}\n          KBC_DEVELOPERPORTAL_PASSWORD: ${{ secrets.KBC_PASSWORD\
+    \ }}\n        run: ./deploy.sh\n```\n\n### Version Management\n\nFollow semantic\
+    \ versioning:\n\n- **v1.0.0** - Major release (breaking changes)\n- **v1.1.0**\
+    \ - Minor release (new features)\n- **v1.0.1** - Patch release (bug fixes)\n\n\
+    ```bash\n# Tag and push\ngit tag -a v1.0.0 -m \"Release version 1.0.0\"\ngit push\
+    \ origin v1.0.0\n```\n\n## Testing\n\n### Unit Tests\n\n```python\nimport unittest\n\
+    from src.component import Component\n\nclass TestComponent(unittest.TestCase):\n\
+    \    def test_configuration_validation(self):\n        \"\"\"Test that required\
+    \ parameters are validated.\"\"\"\n        # Test implementation\n\n    def test_csv_processing(self):\n\
+    \        \"\"\"Test CSV reading and writing with proper encoding.\"\"\"\n    \
+    \    # Test implementation\n\n    def test_state_management(self):\n        \"\
+    \"\"Test state file persistence.\"\"\"\n        # Test implementation\n```\n\n\
+    Run tests:\n\n```bash\n# Using unittest\npython -m unittest discover -s tests\n\
+    \n# Using pytest\npytest tests/ -v --cov=src\n```\n\n## Code Quality\n\nUse Ruff\
+    \ for code formatting and linting:\n\n```bash\n# Format code\nruff format .\n\n\
+    # Lint and auto-fix issues\nruff check --fix .\n```\n\n## Resources\n\n- [Keboola\
+    \ Developer Docs](https://developers.keboola.com/)\n- [Python Component Library](https://github.com/keboola/python-component)\n\
+    - [Component Tutorial](https://developers.keboola.com/extend/component/tutorial/)\n\
+    - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)\n"
+  format: markdown
+- source: 05-dataapp-development.md
+  content: "# Data App Development\n\n## Overview\n\nKeboola Data Apps are Streamlit\
+    \ applications that run directly in the Keboola platform, providing interactive\
+    \ dashboards and analytics tools. They connect to Keboola Storage and can query\
+    \ data from workspace tables.\n\n## Key Concepts\n\n### What are Data Apps?\n\n\
+    Data Apps are containerized Streamlit applications that:\n- Run inside Keboola's\
+    \ infrastructure\n- Have direct access to project data via workspace\n- Support\
+    \ interactive filtering, visualization, and exploration\n- Can be shared with\
+    \ team members\n- Auto-scale based on usage\n\n### Architecture Pattern: SQL-First\n\
+    \n**Core Principle**: Push computation to the database, never load large datasets\
+    \ into Python.\n\nWhy?\n- Keboola workspaces (Snowflake, Redshift, BigQuery) are\
+    \ optimized for queries\n- Loading data into Streamlit doesn't scale\n- SQL aggregation\
+    \ is 10-100x faster than pandas\n\n## Project Structure\n\n```\nmy-dataapp/\n\
+    ├── streamlit_app.py          # Main app entry point with sidebar\n├── pages/\n\
+    │   ├── 01_Overview.py        # First page\n│   ├── 02_Analytics.py       # Second\
+    \ page\n│   └── 03_Details.py         # Third page\n├── utils/\n│   ├── data_loader.py\
+    \        # Centralized data access\n│   └── config.py             # Environment\
+    \ configuration\n├── requirements.txt          # Python dependencies\n└── README.md\
+    \                 # Documentation\n```\n\n## Environment Setup\n\n### Local Development\n\
+    \nData apps must work in two environments:\n\n1. **Local Development**: Use Keboola\
+    \ Storage API\n2. **Production**: Use Keboola workspace connection\n\n```python\n\
+    # utils/config.py\nimport os\nimport streamlit as st\n\ndef get_connection_mode():\n\
+    \    \"\"\"Detect if running locally or in Keboola.\"\"\"\n    return 'workspace'\
+    \ if 'KBC_PROJECT_ID' in os.environ else 'local'\n\ndef get_storage_token():\n\
+    \    \"\"\"Get Storage API token from environment.\"\"\"\n    return os.environ.get('KEBOOLA_TOKEN')\n\
+    \ndef get_stack_url():\n    \"\"\"Get Keboola stack URL.\"\"\"\n    return os.environ.get('KEBOOLA_STACK_URL',\
+    \ 'connection.keboola.com')\n```\n\n### Connection Setup\n\n```python\n# utils/data_loader.py\n\
+    import os\nimport streamlit as st\nfrom utils.config import get_connection_mode\n\
+    \n@st.cache_resource\ndef get_connection():\n    \"\"\"Get database connection\
+    \ based on environment.\"\"\"\n    mode = get_connection_mode()\n\n    if mode\
+    \ == 'workspace':\n        # Running in Keboola - use workspace connection\n \
+    \       return st.connection('snowflake', type='snowflake')\n    else:\n     \
+    \   # Local development - use Storage API\n        return None  # Implement Storage\
+    \ API wrapper\n\ndef get_table_name():\n    \"\"\"Get fully qualified table name.\"\
+    \"\"\n    mode = get_connection_mode()\n\n    if mode == 'workspace':\n      \
+    \  # In workspace: database.schema.table\n        return f'\"{os.environ[\"KBC_PROJECT_ID\"\
+    ]}\".\"{os.environ[\"KBC_BUCKET_ID\"]}\".\"{os.environ[\"KBC_TABLE_NAME\"]}\"\
+    '\n    else:\n        # Local: bucket.table\n        return 'in.c-analysis.usage_data'\n\
+    ```\n\n## SQL-First Design Pattern\n\n### Good Pattern: Aggregate in Database\n\
+    \n```python\n@st.cache_data(ttl=300)\ndef get_summary_metrics(where_clause: str\
+    \ = \"\"):\n    query = f'''\n        SELECT\n            COUNT(*) as total_count,\n\
+    \            COUNT(DISTINCT \"user_id\") as unique_users,\n            AVG(\"\
+    session_duration\") as avg_duration,\n            SUM(\"revenue\") as total_revenue\n\
+    \        FROM {get_table_name()}\n        WHERE \"date\" >= CURRENT_DATE - INTERVAL\
+    \ '90 days'\n            {f\"AND {where_clause}\" if where_clause else \"\"}\n\
+    \    '''\n    return execute_query(query)\n```\n\n### Bad Pattern: Load All Data\n\
+    \n```python\n# DON'T DO THIS\ndf = execute_query(f\"SELECT * FROM {get_table_name()}\"\
+    )\nresult = df.groupby('category').agg({'value': 'mean'})\n```\n\n## Global Filter\
+    \ Pattern\n\nGlobal filters allow users to filter all pages from one control in\
+    \ the sidebar.\n\n### Step 1: Create Filter Function\n\n```python\n# utils/data_loader.py\n\
+    import streamlit as st\n\ndef get_user_type_filter_clause():\n    \"\"\"Get SQL\
+    \ WHERE clause for user type filter.\"\"\"\n    # Initialize session state with\
+    \ default\n    if 'user_filter' not in st.session_state:\n        st.session_state.user_filter\
+    \ = 'external'\n\n    # Return appropriate SQL condition\n    if st.session_state.user_filter\
+    \ == 'external':\n        return '\"user_type\" = \\'External User\\''\n    elif\
+    \ st.session_state.user_filter == 'internal':\n        return '\"user_type\" =\
+    \ \\'Keboola User\\''\n    return ''  # 'all' - no filter\n```\n\n### Step 2:\
+    \ Add UI Control\n\n```python\n# streamlit_app.py (sidebar)\nimport streamlit\
+    \ as st\nfrom utils.data_loader import get_user_type_filter_clause\n\nst.set_page_config(page_title=\"\
+    My Dashboard\", layout=\"wide\")\n\n# Initialize session state\nif 'user_filter'\
+    \ not in st.session_state:\n    st.session_state.user_filter = 'external'\n\n\
+    # Sidebar filter\nst.sidebar.header(\"Filters\")\nuser_option = st.sidebar.radio(\n\
+    \    \"User Type:\",\n    options=['external', 'internal', 'all'],\n    index=['external',\
+    \ 'internal', 'all'].index(st.session_state.user_filter)\n)\n\n# Update session\
+    \ state and trigger rerun if changed\nif user_option != st.session_state.user_filter:\n\
+    \    st.session_state.user_filter = user_option\n    st.rerun()\n```\n\n### Step\
+    \ 3: Use Filter in Pages\n\n```python\n# pages/01_Overview.py\nimport streamlit\
+    \ as st\nfrom utils.data_loader import get_user_type_filter_clause, execute_query\n\
+    \n# Build WHERE clause\nwhere_parts = ['\"status\" = \\'active\\'']  # Base filter\n\
+    user_filter = get_user_type_filter_clause()\nif user_filter:\n    where_parts.append(user_filter)\n\
+    where_clause = ' AND '.join(where_parts)\n\n# Use in query\n@st.cache_data(ttl=300)\n\
+    def get_page_data():\n    query = f'''\n        SELECT \"date\", COUNT(*) as count\n\
+    \        FROM {get_table_name()}\n        WHERE {where_clause}\n        GROUP\
+    \ BY \"date\"\n        ORDER BY \"date\"\n    '''\n    return execute_query(query)\n\
+    \ndf = get_page_data()\nst.line_chart(df, x='date', y='count')\n```\n\n## Query\
+    \ Execution\n\n### Basic Query Function\n\n```python\n# utils/data_loader.py\n\
+    import streamlit as st\nimport pandas as pd\n\n@st.cache_data(ttl=300)\ndef execute_query(sql:\
+    \ str) -> pd.DataFrame:\n    \"\"\"Execute SQL query and return DataFrame.\"\"\
+    \"\n    conn = get_connection()\n\n    try:\n        df = conn.query(sql)\n  \
+    \      return df\n    except Exception as e:\n        st.error(f\"Query failed:\
+    \ {e}\")\n        return pd.DataFrame()\n```\n\n### SQL Best Practices\n\n**Always\
+    \ quote identifiers**:\n```sql\n-- CORRECT\nSELECT \"user_id\", \"revenue\" FROM\
+    \ \"my_table\"\n\n-- WRONG (fails with reserved keywords or mixed case)\nSELECT\
+    \ user_id, revenue FROM my_table\n```\n\n**Use parameterized WHERE clauses**:\n\
+    ```python\ndef get_date_filter_clause(start_date, end_date):\n    \"\"\"Generate\
+    \ date range filter.\"\"\"\n    return f'\"date\" BETWEEN \\'{start_date}\\' AND\
+    \ \\'{end_date}\\''\n```\n\n## Caching Strategy\n\n### Cache Database Connections\n\
+    \n```python\n@st.cache_resource\ndef get_connection():\n    \"\"\"Cache connection\
+    \ object (doesn't change).\"\"\"\n    return st.connection('snowflake', type='snowflake')\n\
+    ```\n\n### Cache Query Results\n\n```python\n@st.cache_data(ttl=300)  # Cache\
+    \ for 5 minutes\ndef get_metrics(where_clause: str):\n    \"\"\"Cache query results\
+    \ (data can change).\"\"\"\n    query = f\"SELECT COUNT(*) FROM {get_table_name()}\
+    \ WHERE {where_clause}\"\n    return execute_query(query)\n```\n\n### TTL Guidelines\n\
+    \n- **Static reference data**: `ttl=3600` (1 hour)\n- **Dashboard metrics**: `ttl=300`\
+    \ (5 minutes)\n- **Real-time data**: `ttl=60` (1 minute)\n- **User-specific data**:\
+    \ No cache or very short TTL\n\n## Session State Management\n\nStreamlit reruns\
+    \ the entire script on every interaction. Use session state to persist values.\n\
+    \n### Initialize Before Use\n\n```python\n# Always initialize session state before\
+    \ creating widgets\nif 'selected_category' not in st.session_state:\n    st.session_state.selected_category\
+    \ = 'all'\n\n# Now create widget\ncategory = st.selectbox(\n    \"Category\",\n\
+    \    options=['all', 'sales', 'marketing'],\n    index=['all', 'sales', 'marketing'].index(st.session_state.selected_category)\n\
+    )\n\n# Update session state if changed\nif category != st.session_state.selected_category:\n\
+    \    st.session_state.selected_category = category\n    st.rerun()\n```\n\n##\
+    \ Error Handling\n\n### Handle Empty Results\n\n```python\ndf = get_page_data()\n\
+    \nif df.empty:\n    st.warning(\"No data available for the selected filters.\"\
+    )\nelse:\n    st.line_chart(df, x='date', y='count')\n```\n\n### Catch Query Errors\n\
+    \n```python\n@st.cache_data(ttl=300)\ndef execute_query(sql: str):\n    try:\n\
+    \        conn = get_connection()\n        return conn.query(sql)\n    except Exception\
+    \ as e:\n        st.error(f\"Database query failed: {e}\")\n        return pd.DataFrame()\n\
+    ```\n\n## Common Patterns\n\n### Metric Cards\n\n```python\n@st.cache_data(ttl=300)\n\
+    def get_kpi_metrics():\n    query = f'''\n        SELECT\n            COUNT(*)\
+    \ as total_users,\n            SUM(\"revenue\") as total_revenue,\n          \
+    \  AVG(\"session_duration\") as avg_duration\n        FROM {get_table_name()}\n\
+    \        WHERE \"date\" >= CURRENT_DATE - INTERVAL '30 days'\n    '''\n    return\
+    \ execute_query(query).iloc[0]\n\nmetrics = get_kpi_metrics()\n\ncol1, col2, col3\
+    \ = st.columns(3)\ncol1.metric(\"Total Users\", f\"{metrics['total_users']:,}\"\
+    )\ncol2.metric(\"Revenue\", f\"${metrics['total_revenue']:,.2f}\")\ncol3.metric(\"\
+    Avg Duration\", f\"{metrics['avg_duration']:.1f}s\")\n```\n\n### Date Range Filter\n\
+    \n```python\nimport datetime\n\ncol1, col2 = st.columns(2)\nstart_date = col1.date_input(\"\
+    Start Date\", datetime.date.today() - datetime.timedelta(days=30))\nend_date =\
+    \ col2.date_input(\"End Date\", datetime.date.today())\n\nwhere_clause = f'\"\
+    date\" BETWEEN \\'{start_date}\\' AND \\'{end_date}\\''\n```\n\n### Dynamic Dropdown\n\
+    \n```python\n@st.cache_data(ttl=3600)\ndef get_categories():\n    query = f'SELECT\
+    \ DISTINCT \"category\" FROM {get_table_name()} ORDER BY \"category\"'\n    return\
+    \ execute_query(query)['category'].tolist()\n\ncategories = get_categories()\n\
+    selected = st.selectbox(\"Category\", options=['All'] + categories)\n```\n\n##\
+    \ Variable Naming Conventions\n\n### Avoid Naming Conflicts\n\n**Problem**: Using\
+    \ same variable name for SQL clause and UI widget\n```python\n# DON'T DO THIS\n\
+    user_filter = get_user_filter_clause()  # SQL string\nuser_filter = st.radio(\"\
+    User Type\", ...)  # UI widget - overwrites SQL!\n```\n\n**Solution**: Use descriptive,\
+    \ unique names\n```python\n# DO THIS\nuser_filter_sql = get_user_filter_clause()\
+    \  # SQL string\nuser_filter_option = st.radio(\"User Type\", ...)  # UI widget\n\
+    ```\n\n### Session State Keys\n\nUse consistent, descriptive keys:\n```python\n\
+    # Good\nst.session_state.user_type_filter = 'external'\nst.session_state.selected_date_range\
+    \ = (start, end)\nst.session_state.page_number = 1\n\n# Bad (ambiguous)\nst.session_state.filter\
+    \ = 'external'\nst.session_state.data = (start, end)\nst.session_state.page =\
+    \ 1\n```\n\n## Deployment\n\n### Requirements File\n\n```txt\n# requirements.txt\n\
+    streamlit>=1.28.0\npandas>=2.0.0\nsnowflake-connector-python>=3.0.0\nplotly>=5.17.0\n\
+    ```\n\n### Environment Variables\n\nRequired in Keboola deployment:\n- `KBC_PROJECT_ID`\
+    \ - Automatically set by platform\n- `KBC_BUCKET_ID` - Automatically set by platform\n\
+    - `KEBOOLA_TOKEN` - Set in Data App configuration\n- `KEBOOLA_STACK_URL` - Set\
+    \ in Data App configuration\n\n### Testing Before Deployment\n\n```bash\n# Local\
+    \ testing\nexport KEBOOLA_TOKEN=your_token\nexport KEBOOLA_STACK_URL=connection.keboola.com\n\
+    streamlit run streamlit_app.py\n```\n\n## Best Practices\n\n### DO:\n\n- Always\
+    \ validate data schemas before writing code\n- Push computation to database -\
+    \ aggregate in SQL, not Python\n- Use fully qualified table names from `get_table_name()`\n\
+    - Quote all identifiers in SQL (`\"column_name\"`)\n- Cache all queries with `@st.cache_data(ttl=300)`\n\
+    - Centralize data access in `utils/data_loader.py`\n- Initialize session state\
+    \ with defaults before UI controls\n- Use unique, descriptive variable names\n\
+    - Test visually before deploying\n- Handle empty DataFrames gracefully\n- Support\
+    \ both local and production environments\n\n### DON'T:\n\n- Skip data validation\
+    \ - always check schemas first\n- Load large datasets into Python - aggregate\
+    \ in database\n- Hardcode table names - use `get_table_name()` function\n- Use\
+    \ same variable name twice (SQL clause and UI widget)\n- Forget session state\
+    \ initialization before creating widgets\n- Assume columns exist - validate first\n\
+    - Use unquoted SQL identifiers\n- Skip error handling for empty query results\n\
+    - Deploy without local testing\n\n## Visual Verification Workflow\n\nBefore deploying,\
+    \ test your app:\n\n1. **Start local server**: `streamlit run streamlit_app.py`\n\
+    2. **Open in browser**: `http://localhost:8501`\n3. **Test all interactions**:\n\
+    \   - Click through all pages\n   - Try all filter combinations\n   - Verify metrics\
+    \ update correctly\n   - Check for error messages\n4. **Capture screenshots**\
+    \ of working features\n5. **Deploy with confidence**\n\n## Common Issues\n\n###\
+    \ \"KeyError: 'column_name'\"\n\n**Cause**: Column doesn't exist or wrong name\n\
+    **Solution**: Validate schema before querying:\n```python\n# Check available columns\
+    \ first\nquery = f'SELECT * FROM {get_table_name()} LIMIT 1'\ndf = execute_query(query)\n\
+    print(df.columns)  # See actual column names\n```\n\n### Filter Not Working\n\n\
+    **Cause**: Filter SQL not included in WHERE clause\n**Solution**: Always build\
+    \ WHERE clause systematically:\n```python\nwhere_parts = []\nif base_filter :=\
+    \ get_base_filter():\n    where_parts.append(base_filter)\nif user_filter := get_user_filter_clause():\n\
+    \    where_parts.append(user_filter)\nwhere_clause = ' AND '.join(where_parts)\
+    \ if where_parts else '1=1'\n```\n\n### Session State Not Persisting\n\n**Cause**:\
+    \ Not initializing before widget creation\n**Solution**: Initialize before use:\n\
+    ```python\nif 'my_value' not in st.session_state:\n    st.session_state.my_value\
+    \ = default_value\n\nwidget = st.text_input(\"Label\", value=st.session_state.my_value)\n\
+    ```\n\n## Resources\n\n- [Streamlit Documentation](https://docs.streamlit.io)\n\
+    - [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)\n\
+    - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)\n"
   format: markdown
