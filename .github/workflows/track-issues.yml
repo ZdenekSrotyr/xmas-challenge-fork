@@ -6,6 +6,11 @@ on:
 
 # Automatically track issues in the knowledge graph
 
+# Serialize execution to prevent binary merge conflicts in graph.db
+concurrency:
+  group: track-issues-graph
+  cancel-in-progress: false
+
 jobs:
   track-issue:
     runs-on: ubuntu-latest
