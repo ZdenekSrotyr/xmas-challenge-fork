@@ -1,0 +1,90 @@
+name: Deploy Knowledge Graph UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'automation/graph/data/graph.db'
+      - 'web/**'
+      - 'automation/graph/export_json.py'
+  workflow_dispatch:
+
+# Only allow one deployment to run at a time
+concurrency:
+  group: deploy-ui
+  cancel-in-progress: false
+
+# Required permissions for GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Export graph to JSON
+        run: |
+          python automation/graph/export_json.py --output web/data/graph.json
+
+      - name: Collect deployment stats
+        id: stats
+        run: |
+          if [ -f web/data/graph.json ]; then
+            NODE_COUNT=$(python -c "import json; data=json.load(open('web/data/graph.json')); print(data['metadata']['node_count'])")
+            EDGE_COUNT=$(python -c "import json; data=json.load(open('web/data/graph.json')); print(data['metadata']['edge_count'])")
+            echo "node_count=$NODE_COUNT" >> $GITHUB_OUTPUT
+            echo "edge_count=$EDGE_COUNT" >> $GITHUB_OUTPUT
+          else
+            echo "node_count=0" >> $GITHUB_OUTPUT
+            echo "edge_count=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## 🌐 Knowledge Graph UI Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.deployment.outcome }}" == "success" ]; then
+            echo "✅ **Deployment Successful**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Graph Statistics" >> $GITHUB_STEP_SUMMARY
+            echo "- **Nodes:** ${{ steps.stats.outputs.node_count }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Edges:** ${{ steps.stats.outputs.edge_count }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔗 Access" >> $GITHUB_STEP_SUMMARY
+            echo "- **URL:** ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The knowledge graph UI should be accessible within 60-90 seconds." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deployment Failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi

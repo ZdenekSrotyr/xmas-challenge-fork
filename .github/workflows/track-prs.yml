@@ -1,0 +1,182 @@
+name: Track PRs in Graph
+
+on:
+  pull_request:
+    types: [opened, closed]
+
+# Automatically track pull requests in the knowledge graph
+
+jobs:
+  track-pr:
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: read
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Get PR data
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            // Get changed files
+            const files = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            // Add changed files to PR data
+            pr.data.changed_files = files.data;
+
+            // Save to file for Python script
+            const fs = require('fs');
+            fs.writeFileSync(
+              'pr-data.json',
+              JSON.stringify(pr.data, null, 2)
+            );
+
+      - name: Track PR in graph
+        run: |
+          cd automation/graph
+
+          if [ "${{ github.event.action }}" == "opened" ]; then
+            python event_handler.py pr created ${{ github.event.pull_request.number }} \
+              --data ../../pr-data.json
+
+          elif [ "${{ github.event.action }}" == "closed" ]; then
+            if [ "${{ github.event.pull_request.merged }}" == "true" ]; then
+              python event_handler.py pr merged ${{ github.event.pull_request.number }}
+            else
+              # PR closed without merge - just update status
+              python -c "
+          from knowledge_graph import KnowledgeGraph
+          with KnowledgeGraph() as graph:
+              graph.update_node('PullRequest:${{ github.event.pull_request.number }}', status='closed')
+              print('✓ PR #${{ github.event.pull_request.number }} closed in graph')
+          "
+            fi
+          fi
+
+      - name: Find affected skills
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true
+        id: affected
+        run: |
+          cd automation/graph
+
+          # Find skills that need regeneration
+          python -c "
+          from knowledge_graph import KnowledgeGraph
+
+          with KnowledgeGraph() as graph:
+              pr_id = 'PullRequest:${{ github.event.pull_request.number }}'
+
+              # Find modified documents
+              modified = graph.find_related(pr_id, relationship='MODIFIES')
+
+              # Find dependent skills
+              skills = set()
+              for doc in modified:
+                  deps = graph.find_dependents(doc['id'])
+                  for dep_id in deps:
+                      if dep_id.startswith('Skill:'):
+                          skills.add(dep_id)
+
+              if skills:
+                  print('AFFECTED_SKILLS=' + ','.join(skills))
+              else:
+                  print('AFFECTED_SKILLS=none')
+          " >> $GITHUB_OUTPUT
+
+      - name: Trigger skill regeneration
+        if: steps.affected.outputs.AFFECTED_SKILLS != 'none'
+        run: |
+          echo "🔄 Skills need regeneration:"
+          echo "${{ steps.affected.outputs.AFFECTED_SKILLS }}" | tr ',' '\n'
+
+          # Trigger sync workflows if docs/ changed
+          if echo "${{ steps.affected.outputs.AFFECTED_SKILLS }}" | grep -q "claude"; then
+            echo "  → Triggering Claude skill sync..."
+            gh workflow run sync-claude-skills.yml
+          fi
+
+          if echo "${{ steps.affected.outputs.AFFECTED_SKILLS }}" | grep -q "gemini"; then
+            echo "  → Triggering Gemini skill sync..."
+            gh workflow run sync-gemini-skills.yml
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit graph changes
+        id: check-changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if graph DB changed
+          if [ -f automation/graph/data/graph.db ]; then
+            git add automation/graph/data/graph.db
+
+            if git diff --staged --quiet; then
+              echo "ℹ️ No graph changes to commit"
+              echo "changed=false" >> $GITHUB_OUTPUT
+            else
+              git commit -m "chore(graph): Track PR #${{ github.event.pull_request.number }}
+
+          Action: ${{ github.event.action }}
+          Merged: ${{ github.event.pull_request.merged }}
+
+          [skip ci]"
+              git push
+              echo "changed=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger UI rebuild
+        if: steps.check-changes.outputs.changed == 'true'
+        run: |
+          echo "🔄 Triggering UI deployment..."
+          gh workflow run deploy-ui.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## 📊 Knowledge Graph Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** ${{ github.event.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Merged:** ${{ github.event.pull_request.merged }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Title:** ${{ github.event.pull_request.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.affected.outputs.AFFECTED_SKILLS }}" != "none" ]; then
+            echo "### 🔄 Affected Skills" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.affected.outputs.AFFECTED_SKILLS }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f automation/graph/data/graph.db ]; then
+            cd automation/graph
+            python knowledge_graph.py --stats >> ../../$GITHUB_STEP_SUMMARY
+          fi
