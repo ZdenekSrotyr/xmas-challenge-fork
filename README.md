@@ -1,5 +1,7 @@
 # 🧠 Self-Learning AI Knowledge System
 
+> 🌐 **Live Dashboard**: https://zdeneksrotyr.github.io/xmas-challenge-fork/
+
 > **A self-improving knowledge base for AI agents that learns from real user interactions**
 
 [![GitHub Pages](https://img.shields.io/badge/docs-live-brightgreen)](https://zdeneksrotyr.github.io/xmas-challenge-fork/)
