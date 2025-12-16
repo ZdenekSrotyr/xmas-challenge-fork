@@ -156,3 +156,93 @@ response = requests.post(
 
 **Why**: The `/export-async` endpoint creates a new export job, which is a write operation requiring POST. The API will reject GET requests.
 
+
+
+## 6. Incremental Loads Without Primary Key
+
+**Problem**: Attempting incremental load on table without primary key
+
+**Solution**: Always set primary key before using incremental mode:
+
+```python
+# ❌ WRONG - This will fail if table has no primary key
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "incremental": "1",
+        "dataString": csv_data
+    }
+)
+
+# ✅ CORRECT - Set primary key first
+# Option 1: Set when creating table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "name": "my_table",
+        "primaryKey": "id",  # Set primary key at creation
+        "dataString": csv_data
+    }
+)
+
+# Option 2: Set on existing table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}",
+    headers={"X-StorageApi-Token": token},
+    json={"primaryKey": ["id"]}
+)
+response.raise_for_status()
+
+# Now incremental loads will work
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "incremental": "1",
+        "dataString": new_data
+    }
+)
+```
+
+**Why**: Incremental mode needs primary key to identify which rows to update vs insert.
+
+## 7. Using Wrong Endpoint for Table Import
+
+**Problem**: Confusing table creation endpoint with table import endpoint
+
+**Solution**: Use correct endpoint based on operation:
+
+```python
+# ❌ WRONG - Using creation endpoint for existing table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "name": "existing_table",  # This creates NEW table or fails
+        "dataString": csv_data
+    }
+)
+
+# ✅ CORRECT - Use import endpoint for existing table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token},
+    params={"dataString": csv_data}
+)
+
+# ✅ CORRECT - Use creation endpoint only for NEW tables
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "name": "new_table",
+        "dataString": csv_data
+    }
+)
+```
+
+**Rule of thumb**:
+- Creating new table: `/buckets/{bucket}/tables-async`
+- Importing to existing table: `/tables/{table_id}/import-async`
