@@ -397,7 +397,7 @@ jobs:
           git checkout -b "$branch_name"
 
           # Stage only documentation changes (not metadata files)
-          git add docs/ .github/ *.md || true
+          git add docs/ claude/ gemini/ .github/ *.md 2>/dev/null || true
 
           # Check if there are changes to commit
           if git diff --staged --quiet; then
