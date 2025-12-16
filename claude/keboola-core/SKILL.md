@@ -165,6 +165,54 @@ job_id = response.json()["id"]
 # Poll job until completion (same as above)
 ```
 
+### Import Data to Existing Table
+
+```python
+# Import data to existing table
+csv_data = "id,name,value\n3,baz,300\n4,qux,400"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "dataString": csv_data
+    }
+)
+
+job_id = response.json()["id"]
+# Poll job until completion
+```
+
+### Incremental Write with Primary Keys
+
+```python
+# Incremental load requires primary key specification
+csv_data = "id,name,value\n1,updated_foo,150\n5,new_item,500"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "incremental": "1",  # Enable incremental mode
+        "primaryKey": "id",  # Required for incremental loads
+        "dataString": csv_data
+    }
+)
+
+job_id = response.json()["id"]
+# Poll job until completion
+
+# Note: Incremental mode updates existing rows (by primary key) 
+# and appends new rows. Without incremental mode, the table 
+# is completely replaced.
+```
+
 ## Common Patterns
 
 ### Pagination
@@ -199,7 +247,9 @@ def export_table_paginated(table_id, chunk_size=10000):
 
 ### Incremental Loads
 
-Use changed_since parameter for incremental updates:
+**Reading Incrementally:**
+
+Use changedSince parameter to export only recently changed data:
 
 ```python
 from datetime import datetime, timedelta
@@ -212,6 +262,32 @@ response = requests.get(
     headers={"X-StorageApi-Token": token},
     params={"changedSince": yesterday}
 )
+```
+
+**Writing Incrementally:**
+
+Use incremental parameter to update/append data instead of replacing:
+
+```python
+# Incremental write updates existing rows and appends new ones
+csv_data = "id,name,value\n1,updated_name,999\n6,new_row,600"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "incremental": "1",
+        "primaryKey": "id",  # REQUIRED for incremental mode
+        "dataString": csv_data
+    }
+)
+
+# Without incremental mode, the entire table is replaced
+# With incremental mode: rows with matching primary key are updated,
+# rows with new primary keys are appended
 ```
 
 
@@ -350,6 +426,66 @@ def safe_api_call(url, headers):
     except Exception as e:
         print(f"Unexpected error: {e}")
         return None
+```
+
+## 6. Missing Primary Keys in Incremental Loads
+
+**Problem**: Attempting incremental load without specifying primary key
+
+**Solution**: Always specify primaryKey parameter for incremental writes:
+
+```python
+# ❌ WRONG - Will fail with error
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "incremental": "1",
+        "dataString": csv_data
+    }
+)
+
+# ✅ CORRECT - Includes primary key
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "incremental": "1",
+        "primaryKey": "id",  # Can be comma-separated for composite keys
+        "dataString": csv_data
+    }
+)
+```
+
+## 7. Using Wrong Endpoint for Table Operations
+
+**Problem**: Confusing table creation vs. table import endpoints
+
+**Solution**: Use correct endpoint for your use case:
+
+```python
+# ❌ WRONG - Using create endpoint for existing table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    params={"name": "existing_table"}  # Will create duplicate or fail
+)
+
+# ✅ CORRECT - Create NEW table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async",
+    params={
+        "name": "new_table",
+        "dataString": csv_data
+    }
+)
+
+# ✅ CORRECT - Import to EXISTING table
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/in.c-main.existing_table/import-async",
+    params={
+        "dataString": csv_data
+    }
+)
 ```
 
 
