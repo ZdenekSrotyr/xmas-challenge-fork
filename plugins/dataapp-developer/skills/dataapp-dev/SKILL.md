@@ -18,7 +18,7 @@ When making changes to a Keboola data app, you MUST follow this three-phase appr
 **Before writing any code**, use Keboola MCP to validate assumptions:
 
 1. **Get project context**:
-   ```
+   ```text
    Use mcp__keboola__get_project_info to understand:
    - SQL dialect (Snowflake, BigQuery, etc.)
    - Available data sources
@@ -26,7 +26,7 @@ When making changes to a Keboola data app, you MUST follow this three-phase appr
    ```
 
 2. **Inspect table schemas**:
-   ```
+   ```text
    Use mcp__keboola__get_table with table_id to check:
    - Column names (exact case-sensitive names)
    - Data types (database_native_type, keboola_base_type)
@@ -35,7 +35,7 @@ When making changes to a Keboola data app, you MUST follow this three-phase appr
    ```
 
 3. **Query sample data**:
-   ```
+   ```text
    Use mcp__keboola__query_data to:
    - Verify column values (e.g., distinct values in categorical columns)
    - Test filter conditions
@@ -44,7 +44,7 @@ When making changes to a Keboola data app, you MUST follow this three-phase appr
    ```
 
 **Example validation sequence**:
-```
+```text
 1. mcp__keboola__get_table("out.c-analysis.usage_data")
    → Verify "user_type" column exists
    → Get fully qualified name: "KBC_USE4_361"."out.c-analysis"."usage_data"
@@ -99,28 +99,30 @@ Follow SQL-first architecture patterns:
 **After making changes**, use Playwright MCP to verify:
 
 1. **Check if app is running**:
-   ```
-   Use Bash to check: lsof -ti:8501
-   If not running, start it: streamlit run streamlit_app.py (in background)
+   ```bash
+   # Use Bash to check: 
+   lsof -ti:8501
+   # If not running, start it: 
+   streamlit run streamlit_app.py &
    ```
 
 2. **Navigate to the app**:
-   ```
+   ```text
    mcp__playwright__browser_navigate(url: "http://localhost:8501")
    ```
 
 3. **Wait for page load**:
-   ```
+   ```text
    mcp__playwright__browser_wait_for(time: 3)
    ```
 
 4. **Take screenshots to verify**:
-   ```
+   ```text
    mcp__playwright__browser_take_screenshot(filename: "feature-verification.png")
    ```
 
 5. **Test filter interactions**:
-   ```
+   ```text
    - Click different filter options
    - Navigate to different pages
    - Verify data updates correctly
@@ -128,7 +130,7 @@ Follow SQL-first architecture patterns:
    ```
 
 6. **Verify all pages**:
-   ```
+   ```text
    Navigate through each page section and verify:
    - No errors displayed
    - Metrics show expected values
@@ -523,7 +525,7 @@ See the following reference files in this skill directory for detailed guidance:
 **User Request**: "Add a global filter for user type, defaulting to external users only"
 
 **Your Response**:
-```
+```text
 I'll add a global user type filter following the validate → build → verify workflow.
 
 Phase 1: VALIDATE
@@ -549,7 +551,7 @@ Let me verify the implementation works...
 **User Request**: "Add average session duration to the overview page"
 
 **Your Response**:
-```
+```text
 Phase 1: VALIDATE
 Let me check if we have duration data available...
 [Query table schema]
