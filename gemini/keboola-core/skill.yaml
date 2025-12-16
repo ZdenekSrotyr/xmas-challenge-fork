@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T13:59:46.674115'
+  generated_at: '2025-12-16T14:05:33.677556'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -53,50 +53,80 @@ knowledge_base:
     \ did not complete within {timeout} seconds\")\n\n# Optional: Load data into memory\
     \ if needed\nimport csv\nwith open(\"table_data.csv\", \"r\") as f:\n    reader\
     \ = csv.DictReader(f)\n    data = list(reader)\n```\n\n## Writing Tables\n\n###\
-    \ Create Table from CSV\n\n```python\n# Upload CSV file\ncsv_data = \"id,name,value\\\
-    n1,foo,100\\n2,bar,200\"\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\"\
+    \ Create Table from CSV\n\n```python\n### Create New Table from CSV\n\n```python\n\
+    # Upload CSV file to create a NEW table\ncsv_data = \"id,name,value\\n1,foo,100\\\
+    n2,bar,200\"\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\"\
     ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
     : \"text/csv\"\n    },\n    params={\n        \"name\": \"my_table\",\n      \
-    \  \"dataString\": csv_data\n    }\n)\n\njob_id = response.json()[\"id\"]\n# Poll\
-    \ job until completion (same as above)\n```\n\n## Common Patterns\n\n### Pagination\n\
-    \nLarge tables should be exported in chunks:\n\n```python\ndef export_table_paginated(table_id,\
-    \ chunk_size=10000):\n    \"\"\"Export table in chunks.\"\"\"\n    offset = 0\n\
-    \    all_data = []\n\n    while True:\n        response = requests.get(\n    \
-    \        f\"https://{stack_url}/v2/storage/tables/{table_id}/data-preview\",\n\
-    \            headers={\"X-StorageApi-Token\": token},\n            params={\n\
+    \  \"primaryKey\": \"id\",  # Optional: set primary key\n        \"dataString\"\
+    : csv_data\n    }\n)\nresponse.raise_for_status()\n\njob_id = response.json()[\"\
+    id\"]\n# Poll job until completion (see export example above)\n```\n\n### Import\
+    \ Data to Existing Table\n\n```python\n# Import data to an EXISTING table\ntable_id\
+    \ = \"in.c-main.my_table\"\ncsv_data = \"id,name,value\\n3,baz,300\\n4,qux,400\"\
+    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"text/csv\"\n    },\n    params={\n        \"dataString\": csv_data\n    }\n\
+    )\nresponse.raise_for_status()\n\njob_id = response.json()[\"id\"]\n# Poll job\
+    \ until completion\n```\n\n### Incremental Loads (Append/Update Data)\n\n**Important**:\
+    \ Incremental loads require the table to have a primary key defined.\n\n```python\n\
+    # Incremental load: append new rows or update existing rows by primary key\ntable_id\
+    \ = \"in.c-main.my_table\"\ncsv_data = \"id,name,value\\n1,foo_updated,150\\n5,new_row,500\"\
+    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"text/csv\"\n    },\n    params={\n        \"incremental\": \"1\",  # Enable\
+    \ incremental mode\n        \"dataString\": csv_data\n    }\n)\nresponse.raise_for_status()\n\
+    \njob_id = response.json()[\"id\"]\n# Poll job until completion\n```\n\n**How\
+    \ incremental mode works**:\n- If a row with the same primary key exists, it gets\
+    \ UPDATED\n- If a row with a new primary key exists, it gets APPENDED\n- Existing\
+    \ rows not in the import data are NOT deleted\n\n### Set or Change Primary Key\n\
+    \n```python\n# Set primary key on existing table\ntable_id = \"in.c-main.my_table\"\
+    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"application/json\"\n    },\n    json={\n        \"primaryKey\": [\"id\"] \
+    \ # Can be multiple columns: [\"id\", \"date\"]\n    }\n)\nresponse.raise_for_status()\n\
+    ```\n```\n\n## Common Patterns\n\n### Pagination\n\nLarge tables should be exported\
+    \ in chunks:\n\n```python\ndef export_table_paginated(table_id, chunk_size=10000):\n\
+    \    \"\"\"Export table in chunks.\"\"\"\n    offset = 0\n    all_data = []\n\n\
+    \    while True:\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage/tables/{table_id}/data-preview\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            params={\n\
     \                \"limit\": chunk_size,\n                \"offset\": offset\n\
     \            }\n        )\n\n        chunk = response.json()\n        if not chunk:\n\
     \            break\n\n        all_data.extend(chunk)\n        offset += chunk_size\n\
-    \n    return all_data\n```\n\n### Incremental Loads\n\nUse changed_since parameter\
-    \ for incremental updates:\n\n```python\nfrom datetime import datetime, timedelta\n\
-    \n# Get data changed in last 24 hours\nyesterday = (datetime.now() - timedelta(days=1)).isoformat()\n\
-    \nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
-    ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\"changedSince\"\
-    : yesterday}\n)\n```\n\n\n### Export Table to File (Complete Example)\n\nFor a\
-    \ complete, production-ready example that saves data to a file:\n\n```python\n\
-    import requests\nimport os\nimport time\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\"\
-    , \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\ntable_id\
-    \ = \"in.c-main.customers\"\noutput_file = \"customers.csv\"\n\ndef export_table_to_file(table_id,\
-    \ output_file, timeout=300):\n    \"\"\"Export Keboola table to local CSV file.\"\
-    \"\"\n    \n    # Start async export\n    response = requests.post(\n        f\"\
-    https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n        headers={\"\
-    X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n    job_id\
-    \ = response.json()[\"id\"]\n    \n    print(f\"Export job started: {job_id}\"\
-    )\n    \n    # Poll for completion\n    start_time = time.time()\n    while time.time()\
-    \ - start_time < timeout:\n        job_response = requests.get(\n            f\"\
-    https://{stack_url}/v2/storage/jobs/{job_id}\",\n            headers={\"X-StorageApi-Token\"\
-    : token}\n        )\n        job_response.raise_for_status()\n        job = job_response.json()\n\
-    \        \n        if job[\"status\"] == \"success\":\n            # Download\
-    \ file\n            file_url = job[\"results\"][\"file\"][\"url\"]\n         \
-    \   data_response = requests.get(file_url)\n            \n            with open(output_file,\
-    \ \"wb\") as f:\n                f.write(data_response.content)\n            \n\
-    \            print(f\"Table exported to {output_file}\")\n            return output_file\n\
-    \        \n        elif job[\"status\"] in [\"error\", \"cancelled\", \"terminated\"\
-    ]:\n            error_msg = job.get(\"error\", {}).get(\"message\", \"Unknown\
-    \ error\")\n            raise Exception(f\"Job {job['status']}: {error_msg}\"\
-    )\n        \n        time.sleep(2)\n    \n    raise TimeoutError(f\"Export did\
-    \ not complete within {timeout}s\")\n\n# Usage\nexport_table_to_file(table_id,\
-    \ output_file)\n```\n\n"
+    \n    return all_data\n```\n\n### Reading Data Incrementally\n\nUse changedSince\
+    \ parameter to export only recently modified data:\n\n```python\nfrom datetime\
+    \ import datetime, timedelta\n\n# Get data changed in last 24 hours\nyesterday\
+    \ = (datetime.now() - timedelta(days=1)).isoformat()\n\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token},\n    params={\"changedSince\": yesterday}\n\
+    )\nresponse.raise_for_status()\n\njob_id = response.json()[\"id\"]\n# Poll job\
+    \ until completion\n```\n\n### Writing Data Incrementally\n\nSee the \"Incremental\
+    \ Loads (Append/Update Data)\" section under \"Writing Tables\" above for how\
+    \ to write data incrementally using `incremental: \"1\"` parameter.\n\n\n### Export\
+    \ Table to File (Complete Example)\n\nFor a complete, production-ready example\
+    \ that saves data to a file:\n\n```python\nimport requests\nimport os\nimport\
+    \ time\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
+    )\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\ntable_id = \"in.c-main.customers\"\n\
+    output_file = \"customers.csv\"\n\ndef export_table_to_file(table_id, output_file,\
+    \ timeout=300):\n    \"\"\"Export Keboola table to local CSV file.\"\"\"\n   \
+    \ \n    # Start async export\n    response = requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n\
+    \    job_id = response.json()[\"id\"]\n    \n    print(f\"Export job started:\
+    \ {job_id}\")\n    \n    # Poll for completion\n    start_time = time.time()\n\
+    \    while time.time() - start_time < timeout:\n        job_response = requests.get(\n\
+    \            f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n            headers={\"\
+    X-StorageApi-Token\": token}\n        )\n        job_response.raise_for_status()\n\
+    \        job = job_response.json()\n        \n        if job[\"status\"] == \"\
+    success\":\n            # Download file\n            file_url = job[\"results\"\
+    ][\"file\"][\"url\"]\n            data_response = requests.get(file_url)\n   \
+    \         \n            with open(output_file, \"wb\") as f:\n               \
+    \ f.write(data_response.content)\n            \n            print(f\"Table exported\
+    \ to {output_file}\")\n            return output_file\n        \n        elif\
+    \ job[\"status\"] in [\"error\", \"cancelled\", \"terminated\"]:\n           \
+    \ error_msg = job.get(\"error\", {}).get(\"message\", \"Unknown error\")\n   \
+    \         raise Exception(f\"Job {job['status']}: {error_msg}\")\n        \n \
+    \       time.sleep(2)\n    \n    raise TimeoutError(f\"Export did not complete\
+    \ within {timeout}s\")\n\n# Usage\nexport_table_to_file(table_id, output_file)\n\
+    ```\n\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
@@ -152,5 +182,38 @@ knowledge_base:
     \ async jobs\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n    headers={\"X-StorageApi-Token\": token}\n)\n```\n\n**Why**: The `/export-async`\
     \ endpoint creates a new export job, which is a write operation requiring POST.\
-    \ The API will reject GET requests.\n\n"
+    \ The API will reject GET requests.\n\n\n\n## 6. Incremental Loads Without Primary\
+    \ Key\n\n**Problem**: Attempting incremental load on table without primary key\n\
+    \n**Solution**: Always set primary key before using incremental mode:\n\n```python\n\
+    # ❌ WRONG - This will fail if table has no primary key\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token},\n    params={\n        \"incremental\"\
+    : \"1\",\n        \"dataString\": csv_data\n    }\n)\n\n# ✅ CORRECT - Set primary\
+    \ key first\n# Option 1: Set when creating table\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token},\n    params={\n        \"name\": \"\
+    my_table\",\n        \"primaryKey\": \"id\",  # Set primary key at creation\n\
+    \        \"dataString\": csv_data\n    }\n)\n\n# Option 2: Set on existing table\n\
+    response = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    json={\"primaryKey\": [\"\
+    id\"]}\n)\nresponse.raise_for_status()\n\n# Now incremental loads will work\n\
+    response = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\n        \"incremental\"\
+    : \"1\",\n        \"dataString\": new_data\n    }\n)\n```\n\n**Why**: Incremental\
+    \ mode needs primary key to identify which rows to update vs insert.\n\n## 7.\
+    \ Using Wrong Endpoint for Table Import\n\n**Problem**: Confusing table creation\
+    \ endpoint with table import endpoint\n\n**Solution**: Use correct endpoint based\
+    \ on operation:\n\n```python\n# ❌ WRONG - Using creation endpoint for existing\
+    \ table\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\n        \"name\"\
+    : \"existing_table\",  # This creates NEW table or fails\n        \"dataString\"\
+    : csv_data\n    }\n)\n\n# ✅ CORRECT - Use import endpoint for existing table\n\
+    response = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\"dataString\": csv_data}\n\
+    )\n\n# ✅ CORRECT - Use creation endpoint only for NEW tables\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token},\n    params={\n        \"name\": \"\
+    new_table\",\n        \"dataString\": csv_data\n    }\n)\n```\n\n**Rule of thumb**:\n\
+    - Creating new table: `/buckets/{bucket}/tables-async`\n- Importing to existing\
+    \ table: `/tables/{table_id}/import-async`\n"
   format: markdown

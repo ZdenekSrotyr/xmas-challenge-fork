@@ -79,7 +79,10 @@ with open("table_data.csv", "r") as f:
 ### Create Table from CSV
 
 ```python
-# Upload CSV file
+### Create New Table from CSV
+
+```python
+# Upload CSV file to create a NEW table
 csv_data = "id,name,value\n1,foo,100\n2,bar,200"
 
 response = requests.post(
@@ -90,12 +93,88 @@ response = requests.post(
     },
     params={
         "name": "my_table",
+        "primaryKey": "id",  # Optional: set primary key
         "dataString": csv_data
     }
 )
+response.raise_for_status()
 
 job_id = response.json()["id"]
-# Poll job until completion (same as above)
+# Poll job until completion (see export example above)
+```
+
+### Import Data to Existing Table
+
+```python
+# Import data to an EXISTING table
+table_id = "in.c-main.my_table"
+csv_data = "id,name,value\n3,baz,300\n4,qux,400"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "dataString": csv_data
+    }
+)
+response.raise_for_status()
+
+job_id = response.json()["id"]
+# Poll job until completion
+```
+
+### Incremental Loads (Append/Update Data)
+
+**Important**: Incremental loads require the table to have a primary key defined.
+
+```python
+# Incremental load: append new rows or update existing rows by primary key
+table_id = "in.c-main.my_table"
+csv_data = "id,name,value\n1,foo_updated,150\n5,new_row,500"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "incremental": "1",  # Enable incremental mode
+        "dataString": csv_data
+    }
+)
+response.raise_for_status()
+
+job_id = response.json()["id"]
+# Poll job until completion
+```
+
+**How incremental mode works**:
+- If a row with the same primary key exists, it gets UPDATED
+- If a row with a new primary key exists, it gets APPENDED
+- Existing rows not in the import data are NOT deleted
+
+### Set or Change Primary Key
+
+```python
+# Set primary key on existing table
+table_id = "in.c-main.my_table"
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "primaryKey": ["id"]  # Can be multiple columns: ["id", "date"]
+    }
+)
+response.raise_for_status()
+```
 ```
 
 ## Common Patterns
@@ -130,9 +209,9 @@ def export_table_paginated(table_id, chunk_size=10000):
     return all_data
 ```
 
-### Incremental Loads
+### Reading Data Incrementally
 
-Use changed_since parameter for incremental updates:
+Use changedSince parameter to export only recently modified data:
 
 ```python
 from datetime import datetime, timedelta
@@ -140,12 +219,20 @@ from datetime import datetime, timedelta
 # Get data changed in last 24 hours
 yesterday = (datetime.now() - timedelta(days=1)).isoformat()
 
-response = requests.get(
+response = requests.post(
     f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
     headers={"X-StorageApi-Token": token},
     params={"changedSince": yesterday}
 )
+response.raise_for_status()
+
+job_id = response.json()["id"]
+# Poll job until completion
 ```
+
+### Writing Data Incrementally
+
+See the "Incremental Loads (Append/Update Data)" section under "Writing Tables" above for how to write data incrementally using `incremental: "1"` parameter.
 
 
 ### Export Table to File (Complete Example)
