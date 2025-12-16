@@ -12,9 +12,11 @@ You are an expert on the Keboola data platform. Your goal is to help users under
 
 This skill activates when users mention or ask about:
 
-- Keboola platform concepts (workspace, branch, configuration, etc.)
+- Keboola platform concepts (workspace, branch, configuration, stack URL, etc.)
 - Storage API operations (reading/writing tables, buckets, metadata)
 - Jobs API operations (running transformations, components, orchestrations)
+- Regional deployment and stack URL questions
+- API endpoint and authentication troubleshooting
 - Component development and deployment
 - Flows and orchestration
 - MCP server integration
@@ -161,11 +163,14 @@ mcp__keboola__query_data(
 
 ```python
 import requests
+import os
 
 # Configuration
+# IMPORTANT: Use YOUR stack URL, not hardcoded connection.keboola.com
+stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
 project_id = 12345
-storage_token = "your-storage-token"
-base_url = f"https://connection.keboola.com"
+storage_token = os.environ["KEBOOLA_TOKEN"]
+base_url = f"https://{stack_url}"
 
 headers = {
     "X-StorageApi-Token": storage_token,
@@ -335,6 +340,7 @@ The Jobs API allows you to trigger and monitor component executions, transformat
 
 ```python
 # Run a specific component configuration
+# Note: base_url should be https://{your-stack-url} as shown in Storage API section
 response = requests.post(
     f"{base_url}/v2/storage/components/keboola.ex-db-mysql/configs/123456/run",
     headers=headers,
@@ -1241,9 +1247,14 @@ import csv
 import os
 
 # Configuration
+# IMPORTANT: Set KEBOOLA_STACK_URL to your region's stack
+# US: connection.keboola.com
+# EU: connection.eu-central-1.keboola.com
+# Azure: connection.north-europe.azure.keboola.com
+KEBOOLA_STACK_URL = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
 KEBOOLA_PROJECT_ID = 12345
 KEBOOLA_TOKEN = os.environ["KEBOOLA_TOKEN"]
-KEBOOLA_URL = "https://connection.keboola.com"
+KEBOOLA_URL = f"https://{KEBOOLA_STACK_URL}"
 
 MYSQL_HOST = "mysql.example.com"
 MYSQL_USER = os.environ["MYSQL_USER"]
@@ -1411,7 +1422,9 @@ import requests
 import time
 import os
 
-KEBOOLA_URL = "https://connection.keboola.com"
+# Use your stack URL - find it from your Keboola login URL domain
+KEBOOLA_STACK_URL = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+KEBOOLA_URL = f"https://{KEBOOLA_STACK_URL}"
 KEBOOLA_TOKEN = os.environ["KEBOOLA_TOKEN"]
 ORCHESTRATION_ID = 123456
 
@@ -1729,13 +1742,20 @@ if __name__ == "__main__":
 ### Quick Reference Card
 
 ```
+Stack URL (Regional Endpoint):
+  US: connection.keboola.com
+  EU: connection.eu-central-1.keboola.com
+  Find yours: Check your login URL domain
+  From MCP: mcp__keboola__get_project_info()["stack"]
+
 Authentication:
   Storage API: X-StorageApi-Token header
   MCP Server: OAuth (prompted on first use)
+  Token Scope: Bound to specific project AND stack
 
 Project ID:
-  From URL: connection.keboola.com/admin/projects/[ID]
-  From MCP: mcp__keboola__get_project_info()
+  From URL: https://{stack-url}/admin/projects/[ID]
+  From MCP: mcp__keboola__get_project_info()["id"]
 
 Table Operations:
   Read: GET /v2/storage/tables/{table_id}/export-async
@@ -1870,3 +1890,253 @@ Then use: `./hooks/error-reporter.sh` with appropriate details.
 ---
 
 **Remember**: When in doubt, validate with MCP first, then build with confidence!
+
+### Stack URL: Your Regional API Endpoint
+
+**What is a Stack URL?**
+
+Keboola operates multiple regional deployments ("stacks") across the world. Each stack has its own base URL that serves as the foundation for all API calls. The Stack URL is **separate from and independent of** your Project ID.
+
+**Key Distinction:**
+- **Stack URL**: The regional API endpoint (e.g., `connection.keboola.com`)
+- **Project ID**: Your specific project identifier (e.g., `12345`)
+
+You need **both** to make API calls: `https://{STACK_URL}/v2/storage/...`
+
+#### Available Regional Stacks
+
+| Region | Stack URL | Location |
+|--------|-----------|----------|
+| US | `connection.keboola.com` | AWS US East (Virginia) |
+| EU | `connection.eu-central-1.keboola.com` | AWS EU Central (Frankfurt) |
+| Azure North Europe | `connection.north-europe.azure.keboola.com` | Azure North Europe (Ireland) |
+
+#### How to Find Your Stack URL
+
+**Method 1: Check Your Login URL**
+
+Your Stack URL is the domain you use to log into Keboola:
+
+```
+https://connection.keboola.com/admin/projects/12345/...
+         ^^^^^^^^^^^^^^^^^^^^^^^
+         This is your Stack URL
+```
+
+**Method 2: Use MCP Server**
+
+```python
+# Get project info including stack details
+project_info = mcp__keboola__get_project_info()
+
+# Returns:
+# {
+#   "id": 12345,
+#   "url": "https://connection.keboola.com",
+#   "stack": "connection.keboola.com",
+#   "backend": "snowflake",
+#   ...
+# }
+
+stack_url = project_info["stack"]
+```
+
+**Method 3: Ask Your Keboola Administrator**
+
+If you're unsure, contact your Keboola administrator or check your onboarding documentation.
+
+#### Using Stack URL in API Calls
+
+**❌ WRONG: Hardcoded regional URL**
+```python
+base_url = "https://connection.keboola.com"  # Only works for US region!
+```
+
+**✅ CORRECT: Configurable Stack URL**
+```python
+# Store as configuration
+STACK_URL = "connection.eu-central-1.keboola.com"  # EU region
+PROJECT_ID = 12345
+STORAGE_TOKEN = "your-token"
+
+base_url = f"https://{STACK_URL}"
+
+# Make API calls
+response = requests.get(
+    f"{base_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": STORAGE_TOKEN}
+)
+```
+
+**Best Practice Pattern:**
+```python
+import os
+
+# Load from environment variables
+STACK_URL = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+PROJECT_ID = os.environ["KEBOOLA_PROJECT_ID"]
+STORAGE_TOKEN = os.environ["KEBOOLA_TOKEN"]
+
+base_url = f"https://{STACK_URL}"
+```
+
+#### Stack URL in MCP Server
+
+The MCP server automatically determines your Stack URL during OAuth authentication. You don't need to configure it manually when using MCP functions.
+
+#### Common Mistakes
+
+**Mistake 1: Using US Stack for EU Project**
+```python
+# EU project trying to use US stack
+base_url = "https://connection.keboola.com"  # Wrong stack!
+response = requests.get(
+    f"{base_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": eu_project_token}
+)
+# Returns: 401 Unauthorized or 404 Not Found
+```
+
+**Mistake 2: Confusing Stack URL with Project ID**
+```python
+# Don't use Project ID as part of the base URL
+base_url = f"https://connection.keboola.com/projects/{PROJECT_ID}"  # Wrong!
+
+# Project ID is used in specific endpoints, not the base URL
+base_url = f"https://{STACK_URL}"  # Correct base
+endpoint = f"{base_url}/v2/storage/projects/{PROJECT_ID}/..."  # When needed
+```
+
+**Mistake 3: Mixing Stack URLs**
+```python
+# Don't mix different regional endpoints in the same script
+read_url = "https://connection.keboola.com"
+write_url = "https://connection.eu-central-1.keboola.com"
+# These are completely separate Keboola instances!
+```
+
+<details>
+<summary>Deep Dive: Stack Architecture and Token Scope</summary>
+
+**Stack Isolation:**
+
+Each Keboola stack is a completely independent deployment:
+- Separate databases
+- Separate user accounts
+- Separate projects
+- Separate API tokens
+
+A token from the US stack will **never** work with the EU stack, even if you have projects in both regions.
+
+**Token-Stack Binding:**
+
+When you create a Storage API token, it's bound to:
+1. A specific project
+2. On a specific stack
+3. With specific permissions
+
+Example:
+```
+Token: abc123...
+Project: 12345
+Stack: connection.eu-central-1.keboola.com
+Scope: storage:read, storage:write
+```
+
+This token:
+- ✅ Works with: `https://connection.eu-central-1.keboola.com`
+- ❌ Fails with: `https://connection.keboola.com` (different stack)
+- ❌ Fails with: Project 67890 (different project)
+
+**Multi-Region Organizations:**
+
+Some organizations have projects across multiple stacks. Each project requires:
+- Its own Stack URL
+- Its own Project ID
+- Its own API token
+
+Managing multi-region setup:
+```python
+PROJECTS = [
+    {
+        "name": "US Production",
+        "stack": "connection.keboola.com",
+        "project_id": 12345,
+        "token": os.environ["KEBOOLA_TOKEN_US"]
+    },
+    {
+        "name": "EU Production",
+        "stack": "connection.eu-central-1.keboola.com",
+        "project_id": 67890,
+        "token": os.environ["KEBOOLA_TOKEN_EU"]
+    }
+]
+
+for project in PROJECTS:
+    base_url = f"https://{project['stack']}"
+    # Make API calls with project-specific configuration
+```
+
+</details>
+
+### Pitfall 8: Using Wrong Stack URL
+
+**Problem**: API calls fail with 401/404 errors despite valid token
+
+**Solution**:
+
+```python
+# ❌ WRONG: EU project using US stack URL
+stack_url = "connection.keboola.com"  # US stack
+eu_token = "your-eu-project-token"
+
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": eu_token}
+)
+# Returns: 401 Unauthorized - token not found
+
+# ✅ CORRECT: Match stack URL to your project's region
+stack_url = "connection.eu-central-1.keboola.com"  # EU stack
+eu_token = "your-eu-project-token"
+
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": eu_token}
+)
+# Success!
+```
+
+**How to diagnose**:
+
+1. Check your Keboola login URL:
+   - If you log in at `connection.eu-central-1.keboola.com` → Use EU stack
+   - If you log in at `connection.keboola.com` → Use US stack
+
+2. Use MCP to verify:
+```python
+project_info = mcp__keboola__get_project_info()
+print(f"Your stack: {project_info['stack']}")
+```
+
+3. Look for these error patterns:
+   - `401 Unauthorized` + valid token = wrong stack
+   - `404 Not Found` + existing table = wrong stack
+   - Connection timeout = wrong stack (network routing failure)
+
+**Prevention**:
+
+Always use environment variables for stack configuration:
+
+```python
+import os
+
+# Required environment variables:
+# KEBOOLA_STACK_URL - Your region's stack (e.g., connection.eu-central-1.keboola.com)
+# KEBOOLA_TOKEN - Your project's API token
+
+STACK_URL = os.environ["KEBOOLA_STACK_URL"]  # Fail fast if not set
+base_url = f"https://{STACK_URL}"
+
+# Now all API calls use the correct region
+```
