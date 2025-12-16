@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T13:59:46.674115'
+  generated_at: '2025-12-16T14:06:01.524381'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -25,7 +25,20 @@ knowledge_base:
     )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
     \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
     - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
-    \ stack URL, not a hardcoded one.\n"
+    \ stack URL, not a hardcoded one.\n\n## Access Methods\n\nThere are multiple ways\
+    \ to interact with Keboola:\n\n### MCP Server (Model Context Protocol)\nA Claude\
+    \ AI integration providing high-level tools for data exploration:\n- Best for:\
+    \ Interactive data exploration, prototyping, validation\n- Authentication: OAuth\
+    \ (one-time setup)\n- Data limits: Suitable for tables under ~1000 rows\n- See\
+    \ `04-mcp-vs-api.md` for detailed guidance\n\n### Storage API\nDirect HTTP REST\
+    \ API for programmatic access:\n- Best for: Production pipelines, large datasets,\
+    \ automated workflows\n- Authentication: API token per request\n- Data limits:\
+    \ No limits (supports pagination)\n- See `02-storage-api.md` for implementation\
+    \ details\n\n### Components\nPlatform-managed data processing modules:\n- Best\
+    \ for: Scheduled workflows, complex transformations, external integrations\n-\
+    \ Authentication: Managed by platform\n- See component developer documentation\n\
+    \n**Need help choosing?** See `04-mcp-vs-api.md` for a complete comparison and\
+    \ decision framework.\n"
   format: markdown
 - source: 02-storage-api.md
   content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\

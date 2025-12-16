@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T14:03:10.345319
+> Generated: 2025-12-16T14:06:01.482382
 
 ---
 
@@ -75,6 +75,32 @@ Keboola operates multiple regional stacks:
 - **Azure**: connection.north-europe.azure.keboola.com
 
 Always use your project's stack URL, not a hardcoded one.
+
+## Access Methods
+
+There are multiple ways to interact with Keboola:
+
+### MCP Server (Model Context Protocol)
+A Claude AI integration providing high-level tools for data exploration:
+- Best for: Interactive data exploration, prototyping, validation
+- Authentication: OAuth (one-time setup)
+- Data limits: Suitable for tables under ~1000 rows
+- See `04-mcp-vs-api.md` for detailed guidance
+
+### Storage API
+Direct HTTP REST API for programmatic access:
+- Best for: Production pipelines, large datasets, automated workflows
+- Authentication: API token per request
+- Data limits: No limits (supports pagination)
+- See `02-storage-api.md` for implementation details
+
+### Components
+Platform-managed data processing modules:
+- Best for: Scheduled workflows, complex transformations, external integrations
+- Authentication: Managed by platform
+- See component developer documentation
+
+**Need help choosing?** See `04-mcp-vs-api.md` for a complete comparison and decision framework.
 
 
 ---
@@ -463,7 +489,7 @@ response = requests.post(
 
 ```json
 {
-  "generated_at": "2025-12-16T14:03:10.345319",
+  "generated_at": "2025-12-16T14:06:01.482382",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
