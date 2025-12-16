@@ -51,11 +51,11 @@ ENV/
 .config/keboola-error-reporter/
 
 # Metrics output
-scripts/metrics/output/
-scripts/metrics/data/archive/
-scripts/metrics/**/*.html
-scripts/metrics/**/*.json
-scripts/metrics/**/*.csv
+automation/scripts/metrics/output/
+automation/scripts/metrics/data/archive/
+automation/scripts/metrics/**/*.html
+automation/scripts/metrics/**/*.json
+automation/scripts/metrics/**/*.csv
 
 # Logs
 *.log

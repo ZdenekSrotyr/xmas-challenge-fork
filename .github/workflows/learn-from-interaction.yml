@@ -1,0 +1,38 @@
+name: Learn from Interaction
+
+on:
+  workflow_dispatch:
+    inputs:
+      interaction_id:
+        description: 'Interaction ID to analyze'
+        required: true
+        type: number
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Analyze interaction
+        run: |
+          cd automation/learning
+          python analyzer.py --interaction-id ${{ inputs.interaction_id }}
+
+      - name: Get pending learnings
+        id: learnings
+        run: |
+          cd automation/learning
+          python proposer.py > learnings.txt
+          cat learnings.txt
+
+      - name: Create issues for learnings
+        run: |
+          # TODO: Create GitHub issues from pending learnings
+          echo "Would create issues here"

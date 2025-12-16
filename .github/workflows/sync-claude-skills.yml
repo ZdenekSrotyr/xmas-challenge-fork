@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'scripts/generators/claude_generator.py'
+      - 'automation/scripts/generators/claude_generator.py'
   workflow_dispatch:
 
 # Only allow one sync to run at a time
@@ -33,7 +33,7 @@ jobs:
 
       - name: Generate Claude SKILL.md
         run: |
-          python scripts/generators/claude_generator.py \
+          python automation/scripts/generators/claude_generator.py \
             --input docs/keboola/ \
             --output claude/keboola-core/SKILL.md
 

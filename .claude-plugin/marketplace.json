@@ -18,22 +18,22 @@
   "plugins": [
     {
       "name": "keboola-core",
-      "path": "plugins/keboola-core",
+      "path": "claude/keboola-core",
       "description": "Core Keboola platform knowledge - Storage API, Jobs API, Custom Python, Flows"
     },
     {
       "name": "developer",
-      "path": "plugins/developer",
+      "path": "claude/developer",
       "description": "Developer toolkit with specialized agents for code review and security analysis"
     },
     {
       "name": "component-developer",
-      "path": "plugins/component-developer",
+      "path": "claude/component-developer",
       "description": "Build production-ready Keboola Python components"
     },
     {
       "name": "dataapp-developer",
-      "path": "plugins/dataapp-developer",
+      "path": "claude/dataapp-developer",
       "description": "Build Streamlit data apps for Keboola"
     }
   ]

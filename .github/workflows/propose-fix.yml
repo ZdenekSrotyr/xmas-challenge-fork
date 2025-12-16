@@ -86,7 +86,7 @@ jobs:
           file_patterns = [
               r'`([^`]+\.md)`',
               r'(/[\w/\-]+\.md)',
-              r'(plugins/[\w/\-]+\.md)',
+              r'(claude/[\w/\-]+\.md)',
           ]
 
           mentioned_files = set()

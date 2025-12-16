@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'scripts/generators/gemini_generator.py'
+      - 'automation/scripts/generators/gemini_generator.py'
   workflow_dispatch:
 
 concurrency:
@@ -36,7 +36,7 @@ jobs:
 
       - name: Generate Gemini skill.yaml
         run: |
-          python scripts/generators/gemini_generator.py \
+          python automation/scripts/generators/gemini_generator.py \
             --input docs/keboola/ \
             --output gemini/keboola-core/skill.yaml
 
