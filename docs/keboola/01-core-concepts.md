@@ -43,6 +43,36 @@ response = requests.get(
 )
 ```
 
+## Keboola MCP Server
+
+For development and prototyping, Keboola provides an MCP (Model Context Protocol) server with interactive tools:
+
+- **Schema validation**: Check table structures without writing code
+- **Query testing**: Prototype SQL queries interactively
+- **Job debugging**: Inspect job status and errors
+- **Data exploration**: Quick data samples and analysis
+
+**Setup**: OAuth authentication (automatic on first use)
+**Access**: Available through Claude Desktop and MCP-compatible tools
+
+**Example MCP tools:**
+```python
+# Get table schema
+mcp__keboola__get_table("in.c-main.customers")
+
+# Test query
+mcp__keboola__query_data(
+    sql_query='SELECT * FROM "DATABASE"."SCHEMA"."customers" LIMIT 10'
+)
+
+# Check job status
+mcp__keboola__get_job(job_id="123456789")
+```
+
+**When to use**: See [MCP Server vs Direct API Usage](04-mcp-vs-api.md) for detailed guidance.
+
+**Note**: MCP is designed for development workflows. For production pipelines, use the Storage API directly.
+
 ## Regional Stacks
 
 Keboola operates multiple regional stacks:

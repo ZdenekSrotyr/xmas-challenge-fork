@@ -130,3 +130,42 @@ def safe_api_call(url, headers):
         print(f"Unexpected error: {e}")
         return None
 ```
+
+## 6. Using Wrong Tool for the Job
+
+**Problem**: Using Storage API for simple validation or MCP for production pipelines
+
+**Solution**: Choose the right tool:
+
+```python
+# ❌ WRONG - Using API for simple schema check
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables/{table_id}",
+    headers={"X-StorageApi-Token": token}
+)
+columns = [col["name"] for col in response.json()["columns"]]
+
+# ✅ CORRECT - Use MCP for quick validation
+mcp__keboola__get_table(table_id)
+# → Immediately see all columns and types
+
+# ❌ WRONG - Using MCP in production pipeline
+def daily_etl():
+    data = mcp__keboola__query_data(sql_query="SELECT * FROM large_table")
+    # MCP not designed for production/automation
+
+# ✅ CORRECT - Use Storage API for production
+def daily_etl():
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    job_id = response.json()["id"]
+    result = wait_for_job(job_id)
+    # Reliable, async, handles large datasets
+```
+
+**Quick Guide**:
+- **Development/Validation** → Use MCP Server
+- **Production/Automation** → Use Storage API
+- **See**: [MCP Server vs Direct API Usage](04-mcp-vs-api.md)
