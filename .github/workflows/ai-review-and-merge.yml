@@ -1,0 +1,363 @@
+name: AI Review and Auto-Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    # Only run for PRs from github-actions bot (propose-fix generated)
+    if: |
+      (github.event.pull_request.user.login == 'github-actions[bot]' ||
+       github.event.pull_request.user.login == 'app/github-actions')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install anthropic requests
+
+      - name: Get PR details
+        id: pr-details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            // Get files changed
+            const files = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            // Get diff
+            const diff = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              mediaType: {
+                format: 'diff'
+              }
+            });
+
+            // Write to files for Python script
+            const fs = require('fs');
+            fs.writeFileSync('pr-data.json', JSON.stringify({
+              title: pr.data.title,
+              body: pr.data.body,
+              files: files.data.map(f => ({
+                filename: f.filename,
+                status: f.status,
+                additions: f.additions,
+                deletions: f.deletions,
+                changes: f.changes
+              }))
+            }, null, 2));
+
+            fs.writeFileSync('pr-diff.txt', diff.data);
+
+            return pr.data;
+
+      - name: AI Review with Claude
+        id: ai-review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import sys
+          from anthropic import Anthropic
+
+          # Initialize Claude client
+          client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+          # Load PR data
+          with open('pr-data.json', 'r') as f:
+              pr_data = json.load(f)
+
+          with open('pr-diff.txt', 'r') as f:
+              pr_diff = f.read()
+
+          # Prepare review prompt
+          prompt = f"""You are an AI code reviewer for a self-healing knowledge base system.
+
+          Review this auto-generated PR and decide if it should be automatically merged.
+
+          **PR Title:** {pr_data['title']}
+
+          **PR Description:**
+          {pr_data['body']}
+
+          **Files Changed ({len(pr_data['files'])} files):**
+          {chr(10).join([f"- {f['filename']} (+{f['additions']} -{f['deletions']})" for f in pr_data['files']])}
+
+          **Diff Preview (first 3000 chars):**
+          {pr_diff[:3000]}
+
+          **Review Criteria:**
+
+          1. **Safety Check:**
+             - Are ONLY documentation files (docs/keboola/*.md) modified?
+             - Are claude/ and gemini/ skills regenerated correctly?
+             - No code changes, no workflow changes (unless intentional)?
+
+          2. **Relevance Check:**
+             - Do changes address the issue mentioned in PR description?
+             - Are changes meaningful and complete?
+             - Not just placeholder text?
+
+          3. **Quality Check:**
+             - No obvious errors or typos?
+             - Proper markdown formatting?
+             - Code examples look correct?
+
+          4. **Regeneration Check:**
+             - If docs/ changed, are claude/ and gemini/ also updated?
+             - Skill files should reflect docs/ changes
+
+          **Decision:**
+          Respond with a JSON object (ONLY JSON, no markdown):
+
+          {{
+            "decision": "MERGE" or "NEEDS_REVIEW",
+            "confidence": 0-100,
+            "reasoning": "Brief explanation of decision",
+            "safety_score": 0-100,
+            "relevance_score": 0-100,
+            "quality_score": 0-100,
+            "issues_found": ["list", "of", "issues"] or [],
+            "recommendation": "What to do next"
+          }}
+
+          **Guidelines:**
+          - MERGE if: confidence >= 80, safety >= 90, no critical issues
+          - NEEDS_REVIEW if: confidence < 80, safety < 90, or critical issues found
+          - Be conservative - if unsure, choose NEEDS_REVIEW
+          """
+
+          try:
+              # Call Claude API
+              message = client.messages.create(
+                  model="claude-sonnet-4-5-20250929",
+                  max_tokens=2048,
+                  messages=[
+                      {"role": "user", "content": prompt}
+                  ]
+              )
+
+              # Extract response
+              response_text = message.content[0].text.strip()
+
+              # Strip markdown if present
+              if response_text.startswith('```'):
+                  lines = response_text.split('\n')
+                  if lines[0].startswith('```'):
+                      lines = lines[1:]
+                  if lines and lines[-1].strip() == '```':
+                      lines = lines[:-1]
+                  response_text = '\n'.join(lines).strip()
+
+              # Parse JSON
+              review = json.loads(response_text)
+
+              # Validate
+              required = ["decision", "confidence", "reasoning", "safety_score", "relevance_score", "quality_score"]
+              if not all(key in review for key in required):
+                  raise ValueError("Missing required fields in review")
+
+              # Output to GitHub Actions
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"decision={review['decision']}\n")
+                  f.write(f"confidence={review['confidence']}\n")
+                  f.write(f"reasoning={review['reasoning']}\n")
+                  f.write(f"safety_score={review['safety_score']}\n")
+                  f.write(f"relevance_score={review['relevance_score']}\n")
+                  f.write(f"quality_score={review['quality_score']}\n")
+
+              # Save full review
+              with open('ai-review.json', 'w') as f:
+                  json.dump(review, f, indent=2)
+
+              print(f"AI Review: {review['decision']} (confidence: {review['confidence']}%)")
+              print(f"Scores - Safety: {review['safety_score']}, Relevance: {review['relevance_score']}, Quality: {review['quality_score']}")
+
+          except json.JSONDecodeError as e:
+              print(f"Error: Failed to parse AI response: {e}", file=sys.stderr)
+              print(f"Response was: {response_text}", file=sys.stderr)
+              # Default to needs review on error
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"decision=NEEDS_REVIEW\n")
+                  f.write(f"confidence=0\n")
+                  f.write(f"reasoning=AI review failed to parse\n")
+              sys.exit(1)
+          except Exception as e:
+              print(f"Error during AI review: {e}", file=sys.stderr)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"decision=NEEDS_REVIEW\n")
+                  f.write(f"confidence=0\n")
+                  f.write(f"reasoning=AI review error\n")
+              sys.exit(1)
+          EOF
+
+      - name: Post AI Review Comment
+        uses: actions/github-script@v7
+        env:
+          DECISION: ${{ steps.ai-review.outputs.decision }}
+          CONFIDENCE: ${{ steps.ai-review.outputs.confidence }}
+          REASONING: ${{ steps.ai-review.outputs.reasoning }}
+          SAFETY: ${{ steps.ai-review.outputs.safety_score }}
+          RELEVANCE: ${{ steps.ai-review.outputs.relevance_score }}
+          QUALITY: ${{ steps.ai-review.outputs.quality_score }}
+        with:
+          script: |
+            const decision = process.env.DECISION;
+            const confidence = parseInt(process.env.CONFIDENCE);
+            const reasoning = process.env.REASONING;
+            const safety = parseInt(process.env.SAFETY);
+            const relevance = parseInt(process.env.RELEVANCE);
+            const quality = parseInt(process.env.QUALITY);
+
+            // Read full review
+            const fs = require('fs');
+            let fullReview = {};
+            try {
+              fullReview = JSON.parse(fs.readFileSync('ai-review.json', 'utf8'));
+            } catch (e) {}
+
+            // Create comment
+            let comment = `## 🤖 AI Review Results\n\n`;
+
+            if (decision === 'MERGE') {
+              comment += `### ✅ **APPROVED FOR AUTO-MERGE**\n\n`;
+            } else {
+              comment += `### ⚠️ **NEEDS HUMAN REVIEW**\n\n`;
+            }
+
+            comment += `**Confidence:** ${confidence}%\n`;
+            comment += `**Reasoning:** ${reasoning}\n\n`;
+            comment += `### Scores\n`;
+            comment += `- 🛡️ Safety: ${safety}%\n`;
+            comment += `- 🎯 Relevance: ${relevance}%\n`;
+            comment += `- ✨ Quality: ${quality}%\n\n`;
+
+            if (fullReview.issues_found && fullReview.issues_found.length > 0) {
+              comment += `### Issues Found\n`;
+              fullReview.issues_found.forEach(issue => {
+                comment += `- ${issue}\n`;
+              });
+              comment += `\n`;
+            }
+
+            if (fullReview.recommendation) {
+              comment += `### Recommendation\n${fullReview.recommendation}\n\n`;
+            }
+
+            if (decision === 'MERGE') {
+              comment += `---\n\n🚀 **Proceeding with automatic merge...**`;
+            } else {
+              comment += `---\n\n👀 **A human should review this PR before merging.**`;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+      - name: Auto-merge if approved
+        if: steps.ai-review.outputs.decision == 'MERGE'
+        run: |
+          echo "✅ AI approved - merging PR"
+          gh pr merge ${{ github.event.pull_request.number }} \
+            --squash \
+            --delete-branch \
+            --repo ${{ github.repository }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add labels based on decision
+        uses: actions/github-script@v7
+        env:
+          DECISION: ${{ steps.ai-review.outputs.decision }}
+        with:
+          script: |
+            const decision = process.env.DECISION;
+
+            const labels = ['ai-reviewed'];
+
+            if (decision === 'MERGE') {
+              labels.push('auto-merged');
+            } else {
+              labels.push('needs-human-review');
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: labels
+            });
+
+      - name: Close related issue if merged
+        if: steps.ai-review.outputs.decision == 'MERGE'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body || '';
+
+            // Extract issue number from "Fixes: #123" pattern
+            const issueMatch = prBody.match(/\*\*Fixes:\*\*\s*#(\d+)/);
+
+            if (issueMatch) {
+              const issueNumber = parseInt(issueMatch[1]);
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `✅ Automaticky vyřešeno a mergnuté v PR #${context.issue.number}\n\n🤖 AI Review schválilo změny s vysokou důvěrou.`
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                state: 'closed'
+              });
+
+              console.log(`Closed issue #${issueNumber}`);
+            }
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-${{ github.event.pull_request.number }}
+          path: |
+            ai-review.json
+            pr-data.json
+          retention-days: 30
+          if-no-files-found: ignore
