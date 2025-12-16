@@ -479,6 +479,69 @@ This skill requires access to:
 - **Read/Write/Edit**: For code modifications
 - **Bash**: For git operations and app management
 
+## Running Transformations via API
+
+While data apps primarily read from pre-computed tables, you may need to trigger transformations programmatically. See the Keboola Core skill for complete Jobs API documentation.
+
+**Basic pattern for triggering a transformation**:
+
+```python
+import requests
+import os
+import time
+
+stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+token = os.environ["KEBOOLA_TOKEN"]
+
+def run_transformation(config_id, timeout=600):
+    """Run a transformation and wait for completion."""
+    # Trigger transformation
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/jobs",
+        headers={
+            "X-StorageApi-Token": token,
+            "Content-Type": "application/json"
+        },
+        json={
+            "component": "keboola.snowflake-transformation",
+            "mode": "run",
+            "config": config_id
+        }
+    )
+    
+    job_id = response.json()["id"]
+    
+    # Poll for completion
+    start = time.time()
+    while time.time() - start < timeout:
+        job_response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        
+        job = job_response.json()
+        if job["status"] == "success":
+            return True
+        elif job["status"] == "error":
+            raise Exception(f"Transformation failed: {job.get('result', {}).get('message')}")
+        
+        time.sleep(5)
+    
+    raise TimeoutError("Transformation did not complete in time")
+
+# Usage in data app
+if st.button("Refresh Data"):
+    with st.spinner("Running transformation..."):
+        try:
+            run_transformation("123456")
+            st.success("Data refreshed successfully!")
+            st.rerun()  # Reload with fresh data
+        except Exception as e:
+            st.error(f"Failed to refresh: {e}")
+```
+
+**Note**: Most data apps should use pre-computed tables via Orchestrations. Only trigger transformations directly when building admin interfaces or on-demand refresh features.
+
 ## Development Checklist
 
 Before considering a task complete:

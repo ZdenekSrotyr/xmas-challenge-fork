@@ -352,6 +352,81 @@ def safe_api_call(url, headers):
         return None
 ```
 
+## 6. Not Waiting for Async Jobs
+
+**Problem**: Trying to use transformation results immediately after triggering
+
+**Solution**: Always poll job status until completion:
+
+```python
+# ❌ WRONG
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    json={"component": "keboola.snowflake-transformation", "config": "123"}
+)
+job_id = response.json()["id"]
+# Immediately try to read output tables - WILL FAIL!
+
+# ✅ CORRECT
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    json={"component": "keboola.snowflake-transformation", "config": "123"}
+)
+job_id = response.json()["id"]
+
+# Poll until complete
+while True:
+    job_response = requests.get(
+        f"https://{stack_url}/v2/storage/jobs/{job_id}",
+        headers={"X-StorageApi-Token": token}
+    )
+    job = job_response.json()
+    
+    if job["status"] in ["success", "error"]:
+        break
+    
+    time.sleep(5)
+
+# Now safe to read output tables
+if job["status"] == "success":
+    # Process results
+    pass
+```
+
+## 7. Using Wrong Component IDs
+
+**Problem**: Using incorrect or outdated component identifiers
+
+**Solution**: Verify component IDs before use:
+
+```python
+# ❌ WRONG - Old or incorrect component ID
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    json={
+        "component": "transformation",  # Too generic
+        "config": "123"
+    }
+)
+
+# ✅ CORRECT - Full component identifier
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    json={
+        "component": "keboola.snowflake-transformation",  # Specific
+        "config": "123"
+    }
+)
+
+# List available components to verify
+components_response = requests.get(
+    f"https://{stack_url}/v2/storage/components",
+    headers={"X-StorageApi-Token": token}
+)
+for comp in components_response.json():
+    print(f"{comp['id']}: {comp['name']}")
+```
+
 
 ---
 
@@ -368,3 +443,298 @@ def safe_api_call(url, headers):
 ---
 
 **End of Skill**
+
+---
+
+<!-- Source: 02a-jobs-api.md -->
+
+# Jobs API
+
+## Overview
+
+The Jobs API allows you to trigger and monitor component runs, including transformations, extractors, and writers. All component executions in Keboola are asynchronous jobs.
+
+## Running Transformations
+
+### Trigger a Transformation
+
+```python
+import requests
+import os
+import time
+
+stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+token = os.environ["KEBOOLA_TOKEN"]
+
+# Run a transformation configuration
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "component": "keboola.snowflake-transformation",
+        "mode": "run",
+        "config": "123456"  # Configuration ID
+    }
+)
+
+if response.status_code == 201:
+    job_id = response.json()["id"]
+    print(f"Transformation started: {job_id}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
+
+### Monitor Job Status
+
+```python
+def wait_for_job(job_id, timeout=600, poll_interval=5):
+    """Wait for job completion and return final status."""
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"Failed to get job status: {response.text}")
+        
+        job = response.json()
+        status = job["status"]
+        
+        print(f"Job {job_id} status: {status}")
+        
+        if status == "success":
+            return job
+        elif status == "error":
+            error_msg = job.get("result", {}).get("message", "Unknown error")
+            raise Exception(f"Job failed: {error_msg}")
+        elif status in ["cancelled", "terminated"]:
+            raise Exception(f"Job was {status}")
+        
+        # Job is still processing or waiting
+        time.sleep(poll_interval)
+    
+    raise TimeoutError(f"Job {job_id} did not complete within {timeout} seconds")
+
+# Usage
+try:
+    result = wait_for_job(job_id)
+    print(f"Transformation completed successfully")
+    print(f"Duration: {result.get('durationSeconds')}s")
+except Exception as e:
+    print(f"Transformation failed: {e}")
+```
+
+### Get Job Details and Logs
+
+```python
+def get_job_logs(job_id):
+    """Retrieve job execution logs."""
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/jobs/{job_id}",
+        headers={"X-StorageApi-Token": token}
+    )
+    
+    job = response.json()
+    
+    # Extract relevant information
+    return {
+        "status": job["status"],
+        "created": job["createdTime"],
+        "started": job.get("startTime"),
+        "ended": job.get("endTime"),
+        "duration": job.get("durationSeconds"),
+        "component": job["component"],
+        "config": job.get("config"),
+        "logs": job.get("result", {}).get("message", "")
+    }
+```
+
+## Running Other Components
+
+### Run an Extractor
+
+```python
+# Run a specific extractor configuration
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "component": "keboola.ex-db-snowflake",
+        "mode": "run",
+        "config": "789012"
+    }
+)
+```
+
+### Run a Writer
+
+```python
+# Run a writer configuration
+response = requests.post(
+    f"https://{stack_url}/v2/storage/jobs",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "application/json"
+    },
+    json={
+        "component": "keboola.wr-db-snowflake",
+        "mode": "run",
+        "config": "345678"
+    }
+)
+```
+
+## Finding Component and Config IDs
+
+### List All Configurations
+
+```python
+def list_configurations(component_id):
+    """List all configurations for a component."""
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/components/{component_id}/configs",
+        headers={"X-StorageApi-Token": token}
+    )
+    
+    configs = response.json()
+    for config in configs:
+        print(f"ID: {config['id']}, Name: {config['name']}")
+    
+    return configs
+
+# Example: List all Snowflake transformations
+transformations = list_configurations("keboola.snowflake-transformation")
+```
+
+### Common Component IDs
+
+- Transformations:
+  - `keboola.snowflake-transformation`
+  - `keboola.python-transformation-v2`
+  - `keboola.r-transformation`
+- Extractors:
+  - `keboola.ex-db-snowflake`
+  - `keboola.ex-google-analytics-v4`
+  - `keboola.ex-aws-s3`
+- Writers:
+  - `keboola.wr-db-snowflake`
+  - `keboola.wr-google-sheets`
+
+## Best Practices
+
+### 1. Always Poll for Completion
+
+Never assume a job completes immediately:
+
+```python
+# ❌ WRONG - No polling
+response = requests.post(url, json=job_data)
+job_id = response.json()["id"]
+# Immediately try to use results - will fail!
+
+# ✅ CORRECT - Wait for completion
+response = requests.post(url, json=job_data)
+job_id = response.json()["id"]
+result = wait_for_job(job_id)  # Poll until done
+# Now safe to use results
+```
+
+### 2. Set Appropriate Timeouts
+
+Different jobs have different expected runtimes:
+
+```python
+# Quick transformation: 5 minutes
+wait_for_job(job_id, timeout=300)
+
+# Large data extraction: 30 minutes
+wait_for_job(job_id, timeout=1800)
+
+# Heavy processing: 1 hour
+wait_for_job(job_id, timeout=3600)
+```
+
+### 3. Handle Job Failures Gracefully
+
+```python
+def run_transformation_safely(config_id):
+    """Run transformation with proper error handling."""
+    try:
+        # Start job
+        response = requests.post(
+            f"https://{stack_url}/v2/storage/jobs",
+            headers={"X-StorageApi-Token": token},
+            json={
+                "component": "keboola.snowflake-transformation",
+                "mode": "run",
+                "config": config_id
+            }
+        )
+        response.raise_for_status()
+        
+        job_id = response.json()["id"]
+        
+        # Wait for completion
+        result = wait_for_job(job_id, timeout=600)
+        
+        return {
+            "success": True,
+            "job_id": job_id,
+            "duration": result.get("durationSeconds")
+        }
+        
+    except TimeoutError as e:
+        return {
+            "success": False,
+            "error": "timeout",
+            "message": str(e)
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": "execution_failed",
+            "message": str(e)
+        }
+```
+
+### 4. Log Job Information
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+def run_with_logging(component, config_id):
+    """Run job with comprehensive logging."""
+    logger.info(f"Starting {component} config {config_id}")
+    
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/jobs",
+        headers={"X-StorageApi-Token": token},
+        json={
+            "component": component,
+            "mode": "run",
+            "config": config_id
+        }
+    )
+    
+    job_id = response.json()["id"]
+    logger.info(f"Job created: {job_id}")
+    
+    try:
+        result = wait_for_job(job_id)
+        logger.info(f"Job {job_id} completed in {result.get('durationSeconds')}s")
+        return result
+    except Exception as e:
+        logger.error(f"Job {job_id} failed: {e}")
+        raise
+```
