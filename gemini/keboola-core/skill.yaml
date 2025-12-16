@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T16:33:18.036536'
+  generated_at: '2025-12-16T17:01:54.057679'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -22,24 +22,94 @@ knowledge_base:
     KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\"\
     : STORAGE_TOKEN,\n    \"Content-Type\": \"application/json\"\n}\n\nresponse =\
     \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n\
-    )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
-    \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
-    - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
-    \ stack URL, not a hardcoded one.\n\n### Workspaces\n\nWorkspaces are temporary\
-    \ database environments (Snowflake, Redshift, or BigQuery) created for:\n- **Data\
-    \ Apps**: Direct database access for analytics\n- **Transformations**: SQL/Python\
-    \ data processing\n- **Sandboxes**: Ad-hoc data exploration\n\n**Key Concepts**:\n\
-    \n- **Workspace ID**: Identifies a specific workspace instance (e.g., `12345`)\n\
-    - **Project ID**: Identifies your Keboola project (e.g., `6789`)\n- **Context**:\
-    \ Determines which API/connection to use\n\n**Workspace vs Storage**:\n\n| Aspect\
-    \ | Workspace | Storage |\n|--------|-----------|--------|\n| **Technology** |\
-    \ Snowflake/Redshift/BigQuery | Keboola Storage API |\n| **Access Method** | Database\
-    \ connection (SQL) | REST API (HTTP) |\n| **Use Case** | SQL queries, Data Apps\
-    \ | Data management, orchestration |\n| **Persistence** | Temporary (auto-deleted)\
-    \ | Permanent |\n| **Table Names** | `database.schema.table` | `bucket.table`\
-    \ |\n\n**When to Use What**:\n\n```python\n# Use WORKSPACE when:\n# - Running\
-    \ inside Data App (production)\n# - Running transformation\n# - Direct SQL queries\
-    \ needed\nif 'KBC_PROJECT_ID' in os.environ:\n    conn = st.connection('snowflake',\
+    )\n```\n\n### Token Scopes and Permissions\n\nStorage API tokens have different\
+    \ permission scopes that control what operations they can perform:\n\n#### Available\
+    \ Scopes\n\n- **Read-only access** (`storage:read`):\n  - List buckets and tables\n\
+    \  - Export table data\n  - View table metadata\n  - View configurations (read-only)\n\
+    \  - Cannot create, modify, or delete anything\n\n- **Full access** (`storage:write`,\
+    \ `storage:read`):\n  - All read operations\n  - Create/delete buckets and tables\n\
+    \  - Import/write data\n  - Manage table structure\n  - Create and modify configurations\n\
+    \n- **Configuration management** (`configurations:read`, `configurations:write`):\n\
+    \  - Read component configurations\n  - Create/modify component configurations\n\
+    \  - Manage orchestrations\n\n#### Creating Tokens with Specific Scopes\n\n**Via\
+    \ Keboola UI**:\n1. Go to **Users & Settings** → **API Tokens**\n2. Click **New\
+    \ Token**\n3. Enter token description\n4. Select permissions:\n   - **Read-only**:\
+    \ Check only \"Read\" boxes\n   - **Full access**: Check all permission boxes\n\
+    \   - **Custom**: Select specific scopes needed\n5. Set expiration date (optional\
+    \ but recommended)\n6. Click **Create**\n\n**Via API** (requires admin token):\n\
+    \n```python\n# Create read-only token\nresponse = requests.post(\n    f\"https://{STACK_URL}/v2/storage/tokens\"\
+    ,\n    headers={\"X-StorageApi-Token\": admin_token},\n    json={\n        \"\
+    description\": \"Read-only token for reporting\",\n        \"expiresIn\": 2592000,\
+    \  # 30 days in seconds\n        \"canManageBuckets\": False,\n        \"canReadAllFileUploads\"\
+    : True,\n        \"bucketPermissions\": {\n            \"in.c-main\": \"read\"\
+    \n        }\n    }\n)\nread_only_token = response.json()[\"token\"]\n\n# Create\
+    \ full access token\nresponse = requests.post(\n    f\"https://{STACK_URL}/v2/storage/tokens\"\
+    ,\n    headers={\"X-StorageApi-Token\": admin_token},\n    json={\n        \"\
+    description\": \"Full access token for ETL pipeline\",\n        \"expiresIn\"\
+    : 7776000,  # 90 days\n        \"canManageBuckets\": True,\n        \"canReadAllFileUploads\"\
+    : True,\n        \"bucketPermissions\": {}  # Empty = all buckets\n    }\n)\n\
+    full_access_token = response.json()[\"token\"]\n```\n\n#### Bucket-Level Permissions\n\
+    \nYou can grant granular access to specific buckets:\n\n```python\nresponse =\
+    \ requests.post(\n    f\"https://{STACK_URL}/v2/storage/tokens\",\n    headers={\"\
+    X-StorageApi-Token\": admin_token},\n    json={\n        \"description\": \"Limited\
+    \ access token\",\n        \"canManageBuckets\": False,\n        \"bucketPermissions\"\
+    : {\n            \"in.c-main\": \"read\",      # Read-only access\n          \
+    \  \"out.c-reports\": \"write\"   # Read and write access\n        }\n    }\n\
+    )\n```\n\n**Permission levels**:\n- `\"read\"`: Can list and export tables\n-\
+    \ `\"write\"`: Can read + create/modify/delete tables\n\n#### Security Best Practices\n\
+    \n**DO**:\n\n- Use **read-only tokens** for dashboards and reporting\n- Use **full\
+    \ access tokens** only for ETL/data pipelines\n- Set **expiration dates** on all\
+    \ tokens (30-90 days recommended)\n- Create **separate tokens** for each application/service\n\
+    - Use **bucket-specific permissions** when possible\n- Store tokens in **environment\
+    \ variables**, never in code\n- Rotate tokens regularly (every 90 days minimum)\n\
+    - Use **descriptive names** to track token usage\n- Revoke tokens immediately\
+    \ when no longer needed\n\n**DON'T**:\n\n- Share tokens between applications\n\
+    - Commit tokens to version control\n- Use master/admin tokens in production code\n\
+    - Grant full access when read-only is sufficient\n- Create tokens without expiration\
+    \ dates\n- Reuse tokens across environments (dev/staging/prod)\n\n#### Checking\
+    \ Token Permissions\n\nVerify what your token can do:\n\n```python\nresponse =\
+    \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tokens/verify\",\n    headers={\"\
+    X-StorageApi-Token\": token}\n)\ntoken_info = response.json()\n\nprint(f\"Token\
+    \ description: {token_info['description']}\")\nprint(f\"Can manage buckets: {token_info['canManageBuckets']}\"\
+    )\nprint(f\"Bucket permissions: {token_info['bucketPermissions']}\")\nprint(f\"\
+    Expires: {token_info.get('expires', 'Never')}\")\n```\n\n#### Common Permission\
+    \ Errors\n\n```python\n# Error: 403 Forbidden - Insufficient permissions\ntry:\n\
+    \    response = requests.post(\n        f\"https://{STACK_URL}/v2/storage/buckets\"\
+    ,\n        headers={\"X-StorageApi-Token\": read_only_token},\n        json={\"\
+    name\": \"new-bucket\", \"stage\": \"in\"}\n    )\n    response.raise_for_status()\n\
+    except requests.exceptions.HTTPError as e:\n    if e.response.status_code == 403:\n\
+    \        print(\"Error: Token does not have write permissions\")\n        print(\"\
+    Solution: Use a token with canManageBuckets=True\")\n    raise\n```\n\n#### Use\
+    \ Case Examples\n\n**Read-only dashboard token**:\n```python\n# For Streamlit\
+    \ apps, Data Apps, reporting tools\ntoken_config = {\n    \"description\": \"\
+    Dashboard read-only access\",\n    \"expiresIn\": 2592000,  # 30 days\n    \"\
+    canManageBuckets\": False,\n    \"bucketPermissions\": {\n        \"in.c-analytics\"\
+    : \"read\",\n        \"in.c-sales\": \"read\"\n    }\n}\n```\n\n**ETL pipeline\
+    \ token**:\n```python\n# For extractors, transformations, data loading\ntoken_config\
+    \ = {\n    \"description\": \"ETL pipeline full access\",\n    \"expiresIn\":\
+    \ 7776000,  # 90 days\n    \"canManageBuckets\": True,\n    \"bucketPermissions\"\
+    : {}  # All buckets\n}\n```\n\n**Component development token**:\n```python\n#\
+    \ For local development and testing\ntoken_config = {\n    \"description\": \"\
+    Dev environment token\",\n    \"expiresIn\": 2592000,  # 30 days\n    \"canManageBuckets\"\
+    : True,\n    \"bucketPermissions\": {\n        \"in.c-dev\": \"write\",\n    \
+    \    \"out.c-dev\": \"write\"\n    }\n}\n```\n\n## Regional Stacks\n\nKeboola\
+    \ operates multiple regional stacks:\n- **US**: connection.keboola.com\n- **EU**:\
+    \ connection.eu-central-1.keboola.com\n- **Azure**: connection.north-europe.azure.keboola.com\n\
+    \nAlways use your project's stack URL, not a hardcoded one.\n\n### Workspaces\n\
+    \nWorkspaces are temporary database environments (Snowflake, Redshift, or BigQuery)\
+    \ created for:\n- **Data Apps**: Direct database access for analytics\n- **Transformations**:\
+    \ SQL/Python data processing\n- **Sandboxes**: Ad-hoc data exploration\n\n**Key\
+    \ Concepts**:\n\n- **Workspace ID**: Identifies a specific workspace instance\
+    \ (e.g., `12345`)\n- **Project ID**: Identifies your Keboola project (e.g., `6789`)\n\
+    - **Context**: Determines which API/connection to use\n\n**Workspace vs Storage**:\n\
+    \n| Aspect | Workspace | Storage |\n|--------|-----------|--------|\n| **Technology**\
+    \ | Snowflake/Redshift/BigQuery | Keboola Storage API |\n| **Access Method** |\
+    \ Database connection (SQL) | REST API (HTTP) |\n| **Use Case** | SQL queries,\
+    \ Data Apps | Data management, orchestration |\n| **Persistence** | Temporary\
+    \ (auto-deleted) | Permanent |\n| **Table Names** | `database.schema.table` |\
+    \ `bucket.table` |\n\n**When to Use What**:\n\n```python\n# Use WORKSPACE when:\n\
+    # - Running inside Data App (production)\n# - Running transformation\n# - Direct\
+    \ SQL queries needed\nif 'KBC_PROJECT_ID' in os.environ:\n    conn = st.connection('snowflake',\
     \ type='snowflake')\n    query = f'SELECT * FROM \"{os.environ[\"KBC_PROJECT_ID\"\
     ]}\".\"in.c-main\".\"customers\"'\n    df = conn.query(query)\n\n# Use STORAGE\
     \ API when:\n# - Running outside Keboola (local development)\n# - Managing tables/buckets\n\
@@ -401,7 +471,48 @@ knowledge_base:
     \ Use pagination with `limit`/`offset`\n- **Full table export**: Use `export-async`\
     \ (no manual pagination needed)\n\n**Why**: Different endpoints have different\
     \ pagination capabilities and limits. Using the wrong approach can result in incomplete\
-    \ data or unnecessary complexity.\n"
+    \ data or unnecessary complexity.\n\n\n\n## 10. Using Tokens with Insufficient\
+    \ Permissions\n\n**Problem**: API calls fail with 403 Forbidden because token\
+    \ lacks required permissions\n\n**Solution**: Use appropriate token scope for\
+    \ your operation:\n\n```python\n# ❌ WRONG - Using read-only token for write operation\n\
+    read_only_token = os.environ['KEBOOLA_READ_TOKEN']\n\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": read_only_token},\n    params={\"dataString\"\
+    : csv_data}\n)\n# Fails with 403 Forbidden\n\n# ✅ CORRECT - Use token with write\
+    \ permissions\nwrite_token = os.environ['KEBOOLA_WRITE_TOKEN']\n\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": write_token},\n    params={\"dataString\":\
+    \ csv_data}\n)\nresponse.raise_for_status()\n\n# ✅ BETTER - Check token permissions\
+    \ before operation\ndef verify_token_permissions(token, required_permission='write'):\n\
+    \    \"\"\"Verify token has required permissions.\"\"\"\n    response = requests.get(\n\
+    \        f\"https://{stack_url}/v2/storage/tokens/verify\",\n        headers={\"\
+    X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n    token_info\
+    \ = response.json()\n    \n    if required_permission == 'write' and not token_info.get('canManageBuckets'):\n\
+    \        raise PermissionError(\n            f\"Token '{token_info['description']}'\
+    \ does not have write permissions. \"\n            \"Create a token with canManageBuckets=True.\"\
+    \n        )\n    \n    return token_info\n\n# Usage\ntoken_info = verify_token_permissions(write_token,\
+    \ 'write')\nprint(f\"Using token: {token_info['description']}\")\n```\n\n**Rule\
+    \ of thumb**:\n- **Reading data**: Use tokens with `storage:read` or bucket-specific\
+    \ read permissions\n- **Writing data**: Use tokens with `canManageBuckets=True`\
+    \ and write permissions\n- **Production apps**: Use least-privilege tokens (read-only\
+    \ when possible)\n- **Development**: Use separate dev tokens with appropriate\
+    \ scope\n\n**Common scenarios**:\n\n```python\n# Scenario 1: Dashboard/Data App\
+    \ (read-only)\nREAD_TOKEN = os.environ['KEBOOLA_READ_TOKEN']  # read permissions\
+    \ only\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": READ_TOKEN}\n)  # ✓ Works - export only\
+    \ needs read permission\n\n# Scenario 2: ETL Pipeline (read + write)\nWRITE_TOKEN\
+    \ = os.environ['KEBOOLA_WRITE_TOKEN']  # full permissions\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": WRITE_TOKEN},\n    params={\"dataString\":\
+    \ data}\n)  # ✓ Works - import needs write permission\n\n# Scenario 3: Bucket-specific\
+    \ access\nLIMITED_TOKEN = os.environ['KEBOOLA_LIMITED_TOKEN']  # only in.c-main\
+    \ access\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": LIMITED_TOKEN}\n)  # ✓ Works - has access\
+    \ to in.c-main bucket\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/in.c-sales.orders/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": LIMITED_TOKEN}\n)  # ✗ Fails - no access\
+    \ to in.c-sales bucket\n```\n\n**Why**: Using the principle of least privilege\
+    \ improves security. Read-only tokens can't accidentally modify data, and bucket-specific\
+    \ tokens limit blast radius if compromised.\n"
   format: markdown
 - source: 04-component-development.md
   content: "# Component Development\n\n## Overview\n\nKeboola components are Docker\

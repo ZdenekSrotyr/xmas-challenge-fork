@@ -413,3 +413,94 @@ def get_all_tables_correct():
 - **Full table export**: Use `export-async` (no manual pagination needed)
 
 **Why**: Different endpoints have different pagination capabilities and limits. Using the wrong approach can result in incomplete data or unnecessary complexity.
+
+
+
+## 10. Using Tokens with Insufficient Permissions
+
+**Problem**: API calls fail with 403 Forbidden because token lacks required permissions
+
+**Solution**: Use appropriate token scope for your operation:
+
+```python
+# ❌ WRONG - Using read-only token for write operation
+read_only_token = os.environ['KEBOOLA_READ_TOKEN']
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": read_only_token},
+    params={"dataString": csv_data}
+)
+# Fails with 403 Forbidden
+
+# ✅ CORRECT - Use token with write permissions
+write_token = os.environ['KEBOOLA_WRITE_TOKEN']
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": write_token},
+    params={"dataString": csv_data}
+)
+response.raise_for_status()
+
+# ✅ BETTER - Check token permissions before operation
+def verify_token_permissions(token, required_permission='write'):
+    """Verify token has required permissions."""
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/tokens/verify",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    token_info = response.json()
+    
+    if required_permission == 'write' and not token_info.get('canManageBuckets'):
+        raise PermissionError(
+            f"Token '{token_info['description']}' does not have write permissions. "
+            "Create a token with canManageBuckets=True."
+        )
+    
+    return token_info
+
+# Usage
+token_info = verify_token_permissions(write_token, 'write')
+print(f"Using token: {token_info['description']}")
+```
+
+**Rule of thumb**:
+- **Reading data**: Use tokens with `storage:read` or bucket-specific read permissions
+- **Writing data**: Use tokens with `canManageBuckets=True` and write permissions
+- **Production apps**: Use least-privilege tokens (read-only when possible)
+- **Development**: Use separate dev tokens with appropriate scope
+
+**Common scenarios**:
+
+```python
+# Scenario 1: Dashboard/Data App (read-only)
+READ_TOKEN = os.environ['KEBOOLA_READ_TOKEN']  # read permissions only
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": READ_TOKEN}
+)  # ✓ Works - export only needs read permission
+
+# Scenario 2: ETL Pipeline (read + write)
+WRITE_TOKEN = os.environ['KEBOOLA_WRITE_TOKEN']  # full permissions
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={"X-StorageApi-Token": WRITE_TOKEN},
+    params={"dataString": data}
+)  # ✓ Works - import needs write permission
+
+# Scenario 3: Bucket-specific access
+LIMITED_TOKEN = os.environ['KEBOOLA_LIMITED_TOKEN']  # only in.c-main access
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async",
+    headers={"X-StorageApi-Token": LIMITED_TOKEN}
+)  # ✓ Works - has access to in.c-main bucket
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/in.c-sales.orders/export-async",
+    headers={"X-StorageApi-Token": LIMITED_TOKEN}
+)  # ✗ Fails - no access to in.c-sales bucket
+```
+
+**Why**: Using the principle of least privilege improves security. Read-only tokens can't accidentally modify data, and bucket-specific tokens limit blast radius if compromised.

@@ -43,6 +43,200 @@ response = requests.get(
 )
 ```
 
+### Token Scopes and Permissions
+
+Storage API tokens have different permission scopes that control what operations they can perform:
+
+#### Available Scopes
+
+- **Read-only access** (`storage:read`):
+  - List buckets and tables
+  - Export table data
+  - View table metadata
+  - View configurations (read-only)
+  - Cannot create, modify, or delete anything
+
+- **Full access** (`storage:write`, `storage:read`):
+  - All read operations
+  - Create/delete buckets and tables
+  - Import/write data
+  - Manage table structure
+  - Create and modify configurations
+
+- **Configuration management** (`configurations:read`, `configurations:write`):
+  - Read component configurations
+  - Create/modify component configurations
+  - Manage orchestrations
+
+#### Creating Tokens with Specific Scopes
+
+**Via Keboola UI**:
+1. Go to **Users & Settings** → **API Tokens**
+2. Click **New Token**
+3. Enter token description
+4. Select permissions:
+   - **Read-only**: Check only "Read" boxes
+   - **Full access**: Check all permission boxes
+   - **Custom**: Select specific scopes needed
+5. Set expiration date (optional but recommended)
+6. Click **Create**
+
+**Via API** (requires admin token):
+
+```python
+# Create read-only token
+response = requests.post(
+    f"https://{STACK_URL}/v2/storage/tokens",
+    headers={"X-StorageApi-Token": admin_token},
+    json={
+        "description": "Read-only token for reporting",
+        "expiresIn": 2592000,  # 30 days in seconds
+        "canManageBuckets": False,
+        "canReadAllFileUploads": True,
+        "bucketPermissions": {
+            "in.c-main": "read"
+        }
+    }
+)
+read_only_token = response.json()["token"]
+
+# Create full access token
+response = requests.post(
+    f"https://{STACK_URL}/v2/storage/tokens",
+    headers={"X-StorageApi-Token": admin_token},
+    json={
+        "description": "Full access token for ETL pipeline",
+        "expiresIn": 7776000,  # 90 days
+        "canManageBuckets": True,
+        "canReadAllFileUploads": True,
+        "bucketPermissions": {}  # Empty = all buckets
+    }
+)
+full_access_token = response.json()["token"]
+```
+
+#### Bucket-Level Permissions
+
+You can grant granular access to specific buckets:
+
+```python
+response = requests.post(
+    f"https://{STACK_URL}/v2/storage/tokens",
+    headers={"X-StorageApi-Token": admin_token},
+    json={
+        "description": "Limited access token",
+        "canManageBuckets": False,
+        "bucketPermissions": {
+            "in.c-main": "read",      # Read-only access
+            "out.c-reports": "write"   # Read and write access
+        }
+    }
+)
+```
+
+**Permission levels**:
+- `"read"`: Can list and export tables
+- `"write"`: Can read + create/modify/delete tables
+
+#### Security Best Practices
+
+**DO**:
+
+- Use **read-only tokens** for dashboards and reporting
+- Use **full access tokens** only for ETL/data pipelines
+- Set **expiration dates** on all tokens (30-90 days recommended)
+- Create **separate tokens** for each application/service
+- Use **bucket-specific permissions** when possible
+- Store tokens in **environment variables**, never in code
+- Rotate tokens regularly (every 90 days minimum)
+- Use **descriptive names** to track token usage
+- Revoke tokens immediately when no longer needed
+
+**DON'T**:
+
+- Share tokens between applications
+- Commit tokens to version control
+- Use master/admin tokens in production code
+- Grant full access when read-only is sufficient
+- Create tokens without expiration dates
+- Reuse tokens across environments (dev/staging/prod)
+
+#### Checking Token Permissions
+
+Verify what your token can do:
+
+```python
+response = requests.get(
+    f"https://{STACK_URL}/v2/storage/tokens/verify",
+    headers={"X-StorageApi-Token": token}
+)
+token_info = response.json()
+
+print(f"Token description: {token_info['description']}")
+print(f"Can manage buckets: {token_info['canManageBuckets']}")
+print(f"Bucket permissions: {token_info['bucketPermissions']}")
+print(f"Expires: {token_info.get('expires', 'Never')}")
+```
+
+#### Common Permission Errors
+
+```python
+# Error: 403 Forbidden - Insufficient permissions
+try:
+    response = requests.post(
+        f"https://{STACK_URL}/v2/storage/buckets",
+        headers={"X-StorageApi-Token": read_only_token},
+        json={"name": "new-bucket", "stage": "in"}
+    )
+    response.raise_for_status()
+except requests.exceptions.HTTPError as e:
+    if e.response.status_code == 403:
+        print("Error: Token does not have write permissions")
+        print("Solution: Use a token with canManageBuckets=True")
+    raise
+```
+
+#### Use Case Examples
+
+**Read-only dashboard token**:
+```python
+# For Streamlit apps, Data Apps, reporting tools
+token_config = {
+    "description": "Dashboard read-only access",
+    "expiresIn": 2592000,  # 30 days
+    "canManageBuckets": False,
+    "bucketPermissions": {
+        "in.c-analytics": "read",
+        "in.c-sales": "read"
+    }
+}
+```
+
+**ETL pipeline token**:
+```python
+# For extractors, transformations, data loading
+token_config = {
+    "description": "ETL pipeline full access",
+    "expiresIn": 7776000,  # 90 days
+    "canManageBuckets": True,
+    "bucketPermissions": {}  # All buckets
+}
+```
+
+**Component development token**:
+```python
+# For local development and testing
+token_config = {
+    "description": "Dev environment token",
+    "expiresIn": 2592000,  # 30 days
+    "canManageBuckets": True,
+    "bucketPermissions": {
+        "in.c-dev": "write",
+        "out.c-dev": "write"
+    }
+}
+```
+
 ## Regional Stacks
 
 Keboola operates multiple regional stacks:
