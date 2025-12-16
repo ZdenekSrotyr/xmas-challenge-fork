@@ -12,9 +12,10 @@ on:
         required: true
         type: string
 
-# Only allow one propose-fix workflow per issue at a time
+# Only allow ONE propose-fix workflow at a time (sequential processing)
+# This prevents merge conflicts when multiple issues modify the same files
 concurrency:
-  group: propose-fix-${{ github.event.inputs.issue_number }}
+  group: propose-fix-sequential
   cancel-in-progress: false
 
 jobs:
