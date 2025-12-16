@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T09:47:57.473968
+> Generated: 2025-12-16T14:00:30.644385
 
 ---
 
@@ -76,12 +76,38 @@ Keboola operates multiple regional stacks:
 
 Always use your project's stack URL, not a hardcoded one.
 
+## Interaction Methods
+
+Keboola provides multiple ways to interact with your data:
+
+### MCP Server (Model Context Protocol)
+A tool-based interface for AI assistants that provides:
+- Interactive data exploration
+- Schema validation
+- Quick queries for small datasets
+- OAuth-based authentication
+
+Best for: Prototyping, learning, and exploration.
+
+### Storage API
+REST API for programmatic access that provides:
+- Full control over data operations
+- Large dataset handling
+- Production-ready error handling
+- Token-based authentication
+
+Best for: Production pipelines, automation, and large-scale processing.
+
+See [MCP Server vs Direct API](04-mcp-vs-api.md) for detailed comparison and guidance.
+
 
 ---
 
 <!-- Source: 02-storage-api.md -->
 
 # Storage API
+
+> **Note:** This guide covers direct Storage API usage for production pipelines. For prototyping and exploration, consider using the [MCP Server](04-mcp-vs-api.md) instead.
 
 ## Reading Tables
 
@@ -359,7 +385,7 @@ def safe_api_call(url, headers):
 
 ```json
 {
-  "generated_at": "2025-12-16T09:47:57.473968",
+  "generated_at": "2025-12-16T14:00:30.644385",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

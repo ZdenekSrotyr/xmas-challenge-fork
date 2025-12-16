@@ -1,5 +1,7 @@
 # Storage API
 
+> **Note:** This guide covers direct Storage API usage for production pipelines. For prototyping and exploration, consider using the [MCP Server](04-mcp-vs-api.md) instead.
+
 ## Reading Tables
 
 ### List All Tables
