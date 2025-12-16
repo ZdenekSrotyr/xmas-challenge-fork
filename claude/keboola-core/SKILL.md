@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T14:03:10.345319
+> Generated: 2025-12-16T14:05:37.961536
 
 ---
 
@@ -44,6 +44,13 @@ Components are the building blocks:
 - **Extractors**: Pull data from external sources
 - **Transformations**: Process and modify data
 - **Writers**: Send data to external destinations
+
+### Jobs
+Jobs represent the execution of components:
+- Each time you run a component, it creates a job
+- Jobs can be monitored via the Jobs API
+- Jobs have statuses: `waiting`, `processing`, `success`, `error`, `cancelled`, `terminated`
+- Use the Jobs API to programmatically trigger and monitor transformations and other components
 
 ## Authentication
 
@@ -457,13 +464,66 @@ response = requests.post(
 
 
 
+## 6. Not Using Appropriate Timeout Values
+
+**Problem**: Using the same timeout for all job types
+
+**Solution**: Adjust timeouts based on job complexity:
+
+```python
+# Different timeouts for different operations
+TIMEOUTS = {
+    "export": 300,      # 5 minutes for exports
+    "transformation": 600,  # 10 minutes for transformations
+    "extractor": 900,   # 15 minutes for extractors
+    "writer": 600       # 10 minutes for writers
+}
+
+def run_job_with_appropriate_timeout(component_type, job_id):
+    """Wait for job with appropriate timeout."""
+    timeout = TIMEOUTS.get(component_type, 600)  # Default 10 min
+    return wait_for_job(job_id, timeout=timeout)
+```
+
+## 7. Polling Jobs Too Frequently
+
+**Problem**: Checking job status every second, causing unnecessary API load
+
+**Solution**: Use appropriate polling intervals:
+
+```python
+def smart_job_polling(job_id, timeout=600):
+    """Poll with adaptive intervals."""
+    start_time = time.time()
+    poll_interval = 2  # Start with 2 seconds
+    
+    while time.time() - start_time < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job = response.json()
+        
+        if job["status"] in ["success", "error", "cancelled", "terminated"]:
+            return job
+        
+        time.sleep(poll_interval)
+        
+        # Gradually increase interval up to 10 seconds
+        poll_interval = min(poll_interval + 1, 10)
+    
+    raise TimeoutError(f"Job {job_id} did not complete")
+```
+
+
 ---
 
 ## Metadata
 
 ```json
 {
-  "generated_at": "2025-12-16T14:03:10.345319",
+  "generated_at": "2025-12-16T14:05:37.961536",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

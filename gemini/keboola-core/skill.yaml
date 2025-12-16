@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T13:59:46.674115'
+  generated_at: '2025-12-16T14:05:38.007600'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -16,14 +16,18 @@ knowledge_base:
     \ Logical containers for tables\n- **Tables**: The actual data\n- **Files**: Temporary\
     \ file storage\n\n### Components\nComponents are the building blocks:\n- **Extractors**:\
     \ Pull data from external sources\n- **Transformations**: Process and modify data\n\
-    - **Writers**: Send data to external destinations\n\n## Authentication\n\nUse\
-    \ Storage API tokens for authentication:\n\n```python\nimport os\nimport requests\n\
-    \nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"\
-    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\"\
-    : STORAGE_TOKEN,\n    \"Content-Type\": \"application/json\"\n}\n\nresponse =\
-    \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n\
-    )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
-    \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
+    - **Writers**: Send data to external destinations\n\n### Jobs\nJobs represent\
+    \ the execution of components:\n- Each time you run a component, it creates a\
+    \ job\n- Jobs can be monitored via the Jobs API\n- Jobs have statuses: `waiting`,\
+    \ `processing`, `success`, `error`, `cancelled`, `terminated`\n- Use the Jobs\
+    \ API to programmatically trigger and monitor transformations and other components\n\
+    \n## Authentication\n\nUse Storage API tokens for authentication:\n\n```python\n\
+    import os\nimport requests\n\nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\n\
+    STACK_URL = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\
+    \nheaders = {\n    \"X-StorageApi-Token\": STORAGE_TOKEN,\n    \"Content-Type\"\
+    : \"application/json\"\n}\n\nresponse = requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\"\
+    ,\n    headers=headers\n)\n```\n\n## Regional Stacks\n\nKeboola operates multiple\
+    \ regional stacks:\n- **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
     - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
     \ stack URL, not a hardcoded one.\n"
   format: markdown
@@ -152,5 +156,25 @@ knowledge_base:
     \ async jobs\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n    headers={\"X-StorageApi-Token\": token}\n)\n```\n\n**Why**: The `/export-async`\
     \ endpoint creates a new export job, which is a write operation requiring POST.\
-    \ The API will reject GET requests.\n\n"
+    \ The API will reject GET requests.\n\n\n\n## 6. Not Using Appropriate Timeout\
+    \ Values\n\n**Problem**: Using the same timeout for all job types\n\n**Solution**:\
+    \ Adjust timeouts based on job complexity:\n\n```python\n# Different timeouts\
+    \ for different operations\nTIMEOUTS = {\n    \"export\": 300,      # 5 minutes\
+    \ for exports\n    \"transformation\": 600,  # 10 minutes for transformations\n\
+    \    \"extractor\": 900,   # 15 minutes for extractors\n    \"writer\": 600  \
+    \     # 10 minutes for writers\n}\n\ndef run_job_with_appropriate_timeout(component_type,\
+    \ job_id):\n    \"\"\"Wait for job with appropriate timeout.\"\"\"\n    timeout\
+    \ = TIMEOUTS.get(component_type, 600)  # Default 10 min\n    return wait_for_job(job_id,\
+    \ timeout=timeout)\n```\n\n## 7. Polling Jobs Too Frequently\n\n**Problem**: Checking\
+    \ job status every second, causing unnecessary API load\n\n**Solution**: Use appropriate\
+    \ polling intervals:\n\n```python\ndef smart_job_polling(job_id, timeout=600):\n\
+    \    \"\"\"Poll with adaptive intervals.\"\"\"\n    start_time = time.time()\n\
+    \    poll_interval = 2  # Start with 2 seconds\n    \n    while time.time() -\
+    \ start_time < timeout:\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n        response.raise_for_status()\n\
+    \        job = response.json()\n        \n        if job[\"status\"] in [\"success\"\
+    , \"error\", \"cancelled\", \"terminated\"]:\n            return job\n       \
+    \ \n        time.sleep(poll_interval)\n        \n        # Gradually increase\
+    \ interval up to 10 seconds\n        poll_interval = min(poll_interval + 1, 10)\n\
+    \    \n    raise TimeoutError(f\"Job {job_id} did not complete\")\n```\n"
   format: markdown

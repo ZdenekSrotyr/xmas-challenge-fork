@@ -21,6 +21,13 @@ Components are the building blocks:
 - **Transformations**: Process and modify data
 - **Writers**: Send data to external destinations
 
+### Jobs
+Jobs represent the execution of components:
+- Each time you run a component, it creates a job
+- Jobs can be monitored via the Jobs API
+- Jobs have statuses: `waiting`, `processing`, `success`, `error`, `cancelled`, `terminated`
+- Use the Jobs API to programmatically trigger and monitor transformations and other components
+
 ## Authentication
 
 Use Storage API tokens for authentication:
