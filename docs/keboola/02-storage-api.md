@@ -1,5 +1,120 @@
 # Storage API
 
+## Context: Project vs Workspace
+
+### Understanding the Two Access Patterns
+
+Keboola provides two distinct ways to access data, each with different use cases:
+
+#### Project Context (Storage API)
+
+**When to use**: 
+- External applications and scripts
+- CI/CD pipelines
+- Custom integrations
+- Data extraction outside Keboola
+
+**Characteristics**:
+- Uses **project ID** (e.g., `12345`)
+- Authenticates with Storage API token
+- Accesses data via REST API endpoints
+- Table IDs in format: `in.c-bucket.table`
+- Works from anywhere with internet access
+
+**Example**:
+```python
+import requests
+import os
+
+# Project context - using Storage API
+stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
+token = os.environ["KEBOOLA_TOKEN"]  # Project token
+
+# Access table via API
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+```
+
+#### Workspace Context (Direct Database Access)
+
+**When to use**:
+- Data Apps (Streamlit applications)
+- Transformations (dbt, SQL)
+- Notebooks running inside Keboola
+- Any component with direct database access
+
+**Characteristics**:
+- Uses **workspace ID** (e.g., `12345_workspace`)
+- Connects directly to Snowflake/Redshift/BigQuery
+- Queries data using SQL via database connection
+- Table names fully qualified: `"PROJECT_ID"."BUCKET_ID"."TABLE_NAME"`
+- Only works from within Keboola infrastructure
+
+**Example**:
+```python
+import streamlit as st
+import os
+
+# Workspace context - direct database connection
+project_id = os.environ["KBC_PROJECT_ID"]  # Workspace project ID
+bucket_id = os.environ["KBC_BUCKET_ID"]    # Workspace bucket ID
+
+# Connect to workspace database
+conn = st.connection('snowflake', type='snowflake')
+
+# Query directly with SQL
+query = f'''
+    SELECT * 
+    FROM "{project_id}"."{bucket_id}"."customers"
+    WHERE "status" = 'active'
+'''
+df = conn.query(query)
+```
+
+### Key Differences
+
+| Aspect | Project Context (API) | Workspace Context (Database) |
+|--------|----------------------|-----------------------------|
+| **Access Method** | REST API calls | Direct SQL queries |
+| **Authentication** | Storage API token | Workspace credentials (automatic) |
+| **Table Reference** | `in.c-bucket.table` | `"PROJECT"."BUCKET"."TABLE"` |
+| **Performance** | Slower (HTTP overhead) | Faster (direct DB access) |
+| **Use Case** | External integrations | Internal apps/transformations |
+| **Availability** | Anywhere with internet | Only within Keboola |
+
+### Choosing the Right Context
+
+**Use Project Context (Storage API) when**:
+- Building standalone Python scripts
+- Integrating with external systems
+- Need to work outside Keboola infrastructure
+- Managing table metadata (creating/deleting tables)
+
+**Use Workspace Context (Database) when**:
+- Building Data Apps with Streamlit
+- Writing dbt transformations
+- Running Jupyter notebooks in Keboola
+- Need high-performance SQL queries
+- Working with large datasets (aggregate in database)
+
+### Common Pitfall: Mixing Contexts
+
+❌ **WRONG** - Using Storage API table ID in workspace query:
+```python
+# This will fail in workspace context
+query = f"SELECT * FROM in.c-main.customers"  # Wrong format!
+```
+
+✅ **CORRECT** - Using fully qualified name in workspace:
+```python
+# Correct workspace query
+query = f'SELECT * FROM "{project_id}"."{bucket_id}"."customers"'
+```
+
+---
+
 ## Reading Tables
 
 ### List All Tables

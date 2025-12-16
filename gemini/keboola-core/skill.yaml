@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T15:05:10.584945'
+  generated_at: '2025-12-16T15:25:20.673630'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -28,14 +28,57 @@ knowledge_base:
     \ stack URL, not a hardcoded one.\n"
   format: markdown
 - source: 02-storage-api.md
-  content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\
-    import requests\nimport os\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\"\
-    , \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\n\nresponse\
-    \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": token}\n)\n\ntables = response.json()\nfor table in tables:\n\
-    \    print(f\"{table['id']}: {table['rowsCount']} rows\")\n```\n\n### Export Table\
-    \ Data\n\n```python\nimport time\n\n# Start async export job (NOTE: POST method\
-    \ required)\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+  content: "# Storage API\n\n## Context: Project vs Workspace\n\n### Understanding\
+    \ the Two Access Patterns\n\nKeboola provides two distinct ways to access data,\
+    \ each with different use cases:\n\n#### Project Context (Storage API)\n\n**When\
+    \ to use**: \n- External applications and scripts\n- CI/CD pipelines\n- Custom\
+    \ integrations\n- Data extraction outside Keboola\n\n**Characteristics**:\n- Uses\
+    \ **project ID** (e.g., `12345`)\n- Authenticates with Storage API token\n- Accesses\
+    \ data via REST API endpoints\n- Table IDs in format: `in.c-bucket.table`\n- Works\
+    \ from anywhere with internet access\n\n**Example**:\n```python\nimport requests\n\
+    import os\n\n# Project context - using Storage API\nstack_url = os.environ.get(\"\
+    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"\
+    ]  # Project token\n\n# Access table via API\nresponse = requests.post(\n    f\"\
+    https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\",\n  \
+    \  headers={\"X-StorageApi-Token\": token}\n)\n```\n\n#### Workspace Context (Direct\
+    \ Database Access)\n\n**When to use**:\n- Data Apps (Streamlit applications)\n\
+    - Transformations (dbt, SQL)\n- Notebooks running inside Keboola\n- Any component\
+    \ with direct database access\n\n**Characteristics**:\n- Uses **workspace ID**\
+    \ (e.g., `12345_workspace`)\n- Connects directly to Snowflake/Redshift/BigQuery\n\
+    - Queries data using SQL via database connection\n- Table names fully qualified:\
+    \ `\"PROJECT_ID\".\"BUCKET_ID\".\"TABLE_NAME\"`\n- Only works from within Keboola\
+    \ infrastructure\n\n**Example**:\n```python\nimport streamlit as st\nimport os\n\
+    \n# Workspace context - direct database connection\nproject_id = os.environ[\"\
+    KBC_PROJECT_ID\"]  # Workspace project ID\nbucket_id = os.environ[\"KBC_BUCKET_ID\"\
+    ]    # Workspace bucket ID\n\n# Connect to workspace database\nconn = st.connection('snowflake',\
+    \ type='snowflake')\n\n# Query directly with SQL\nquery = f'''\n    SELECT * \n\
+    \    FROM \"{project_id}\".\"{bucket_id}\".\"customers\"\n    WHERE \"status\"\
+    \ = 'active'\n'''\ndf = conn.query(query)\n```\n\n### Key Differences\n\n| Aspect\
+    \ | Project Context (API) | Workspace Context (Database) |\n|--------|----------------------|-----------------------------|\n\
+    | **Access Method** | REST API calls | Direct SQL queries |\n| **Authentication**\
+    \ | Storage API token | Workspace credentials (automatic) |\n| **Table Reference**\
+    \ | `in.c-bucket.table` | `\"PROJECT\".\"BUCKET\".\"TABLE\"` |\n| **Performance**\
+    \ | Slower (HTTP overhead) | Faster (direct DB access) |\n| **Use Case** | External\
+    \ integrations | Internal apps/transformations |\n| **Availability** | Anywhere\
+    \ with internet | Only within Keboola |\n\n### Choosing the Right Context\n\n\
+    **Use Project Context (Storage API) when**:\n- Building standalone Python scripts\n\
+    - Integrating with external systems\n- Need to work outside Keboola infrastructure\n\
+    - Managing table metadata (creating/deleting tables)\n\n**Use Workspace Context\
+    \ (Database) when**:\n- Building Data Apps with Streamlit\n- Writing dbt transformations\n\
+    - Running Jupyter notebooks in Keboola\n- Need high-performance SQL queries\n\
+    - Working with large datasets (aggregate in database)\n\n### Common Pitfall: Mixing\
+    \ Contexts\n\n❌ **WRONG** - Using Storage API table ID in workspace query:\n```python\n\
+    # This will fail in workspace context\nquery = f\"SELECT * FROM in.c-main.customers\"\
+    \  # Wrong format!\n```\n\n✅ **CORRECT** - Using fully qualified name in workspace:\n\
+    ```python\n# Correct workspace query\nquery = f'SELECT * FROM \"{project_id}\"\
+    .\"{bucket_id}\".\"customers\"'\n```\n\n---\n\n## Reading Tables\n\n### List All\
+    \ Tables\n\n```python\nimport requests\nimport os\n\nstack_url = os.environ.get(\"\
+    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"\
+    ]\n\nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\n\ntables = response.json()\n\
+    for table in tables:\n    print(f\"{table['id']}: {table['rowsCount']} rows\"\
+    )\n```\n\n### Export Table Data\n\n```python\nimport time\n\n# Start async export\
+    \ job (NOTE: POST method required)\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n    headers={\"X-StorageApi-Token\": token}\n)\nresponse.raise_for_status()\n\
     \njob_id = response.json()[\"id\"]\n\n# Poll for completion with timeout\ntimeout\
     \ = 300  # 5 minutes\nstart_time = time.time()\n\nwhile time.time() - start_time\
@@ -215,7 +258,42 @@ knowledge_base:
     \ headers={\"X-StorageApi-Token\": token},\n    params={\n        \"name\": \"\
     new_table\",\n        \"dataString\": csv_data\n    }\n)\n```\n\n**Rule of thumb**:\n\
     - Creating new table: `/buckets/{bucket}/tables-async`\n- Importing to existing\
-    \ table: `/tables/{table_id}/import-async`\n"
+    \ table: `/tables/{table_id}/import-async`\n\n## 8. Mixing Workspace and Storage\
+    \ API Contexts\n\n**Problem**: Using Storage API table IDs in workspace queries\
+    \ or vice versa\n\n**Solution**: Understand and use the correct context for your\
+    \ environment:\n\n```python\n# ❌ WRONG - Using Storage API table ID in workspace\
+    \ (Data App)\nimport streamlit as st\nconn = st.connection('snowflake', type='snowflake')\n\
+    # This will fail - wrong table name format for workspace\nquery = \"SELECT * FROM\
+    \ in.c-main.customers\"\ndf = conn.query(query)\n\n# ✅ CORRECT - Using workspace\
+    \ table name in Data App\nimport os\nproject_id = os.environ[\"KBC_PROJECT_ID\"\
+    ]\nbucket_id = \"in.c-main\"\ntable_name = \"customers\"\n\n# Workspace uses fully\
+    \ qualified names with quotes\nquery = f'SELECT * FROM \"{project_id}\".\"{bucket_id}\"\
+    .\"{table_name}\"'\ndf = conn.query(query)\n\n# ❌ WRONG - Using workspace table\
+    \ name in Storage API\nimport requests\nresponse = requests.post(\n    # This\
+    \ endpoint doesn't exist - wrong format\n    f\"https://{stack_url}/v2/storage/tables/{project_id}.{bucket_id}.{table_name}/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\n\n# ✅ CORRECT - Using Storage\
+    \ API table ID format\nresponse = requests.post(\n    # Storage API uses stage.c-bucket.table\
+    \ format\n    f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\n```\n\n**Context Guide**:\n\
+    \n| Environment | Context | Table Format | Example |\n|-------------|---------|--------------|----------|\n\
+    | Data Apps | Workspace | `\"PROJECT\".\"BUCKET\".\"TABLE\"` | `\"12345\".\"in.c-main\"\
+    .\"customers\"` |\n| External Scripts | Storage API | `stage.c-bucket.table` |\
+    \ `in.c-main.customers` |\n| Transformations | Workspace | `\"PROJECT\".\"BUCKET\"\
+    .\"TABLE\"` | `\"12345\".\"in.c-main\".\"customers\"` |\n| Python Components |\
+    \ Storage API | `stage.c-bucket.table` | `in.c-main.customers` |\n\n**How to identify\
+    \ your context**:\n\n```python\nimport os\n\n# Check for workspace environment\
+    \ variables\nif 'KBC_PROJECT_ID' in os.environ and 'KBC_BUCKET_ID' in os.environ:\n\
+    \    print(\"You are in WORKSPACE context\")\n    print(\"Use: direct database\
+    \ connections with fully qualified names\")\n    print(f'Example: \"{os.environ[\"\
+    KBC_PROJECT_ID\"]}\".\"in.c-main\".\"table\"')\nelse:\n    print(\"You are in\
+    \ STORAGE API context\")\n    print(\"Use: REST API calls with stage.c-bucket.table\
+    \ format\")\n    print(\"Example: in.c-main.table\")\n```\n\n**Why this matters**:\n\
+    - Storage API uses HTTP endpoints and requires `in.c-bucket.table` format\n- Workspace\
+    \ uses direct SQL queries and requires `\"PROJECT\".\"BUCKET\".\"TABLE\"` format\n\
+    - Mixing them causes \"table not found\" or \"invalid endpoint\" errors\n- Data\
+    \ Apps automatically run in workspace context\n- External integrations use Storage\
+    \ API context\n\nSee [Storage API Context Documentation](02-storage-api.md#context-project-vs-workspace)\
+    \ for detailed explanation.\n"
   format: markdown
 - source: 04-component-development.md
   content: "# Component Development\n\n## Overview\n\nKeboola components are Docker\
@@ -377,28 +455,38 @@ knowledge_base:
   content: "# Data App Development\n\n## Overview\n\nKeboola Data Apps are Streamlit\
     \ applications that run directly in the Keboola platform, providing interactive\
     \ dashboards and analytics tools. They connect to Keboola Storage and can query\
-    \ data from workspace tables.\n\n## Key Concepts\n\n### What are Data Apps?\n\n\
-    Data Apps are containerized Streamlit applications that:\n- Run inside Keboola's\
-    \ infrastructure\n- Have direct access to project data via workspace\n- Support\
-    \ interactive filtering, visualization, and exploration\n- Can be shared with\
-    \ team members\n- Auto-scale based on usage\n\n### Architecture Pattern: SQL-First\n\
-    \n**Core Principle**: Push computation to the database, never load large datasets\
-    \ into Python.\n\nWhy?\n- Keboola workspaces (Snowflake, Redshift, BigQuery) are\
-    \ optimized for queries\n- Loading data into Streamlit doesn't scale\n- SQL aggregation\
-    \ is 10-100x faster than pandas\n\n## Project Structure\n\n```\nmy-dataapp/\n\
-    ├── streamlit_app.py          # Main app entry point with sidebar\n├── pages/\n\
-    │   ├── 01_Overview.py        # First page\n│   ├── 02_Analytics.py       # Second\
-    \ page\n│   └── 03_Details.py         # Third page\n├── utils/\n│   ├── data_loader.py\
-    \        # Centralized data access\n│   └── config.py             # Environment\
-    \ configuration\n├── requirements.txt          # Python dependencies\n└── README.md\
-    \                 # Documentation\n```\n\n## Environment Setup\n\n### Local Development\n\
-    \nData apps must work in two environments:\n\n1. **Local Development**: Use Keboola\
-    \ Storage API\n2. **Production**: Use Keboola workspace connection\n\n```python\n\
-    # utils/config.py\nimport os\nimport streamlit as st\n\ndef get_connection_mode():\n\
-    \    \"\"\"Detect if running locally or in Keboola.\"\"\"\n    return 'workspace'\
-    \ if 'KBC_PROJECT_ID' in os.environ else 'local'\n\ndef get_storage_token():\n\
-    \    \"\"\"Get Storage API token from environment.\"\"\"\n    return os.environ.get('KEBOOLA_TOKEN')\n\
-    \ndef get_stack_url():\n    \"\"\"Get Keboola stack URL.\"\"\"\n    return os.environ.get('KEBOOLA_STACK_URL',\
+    \ data from workspace tables.\n\n### Important: Data Apps Use Workspace Context\n\
+    \nData Apps operate in **workspace context**, which means:\n- Direct connection\
+    \ to the database (Snowflake/Redshift/BigQuery)\n- SQL queries instead of REST\
+    \ API calls\n- Table names in format: `\"PROJECT_ID\".\"BUCKET_ID\".\"TABLE_NAME\"\
+    `\n- Automatic authentication via workspace credentials\n\nThis is different from\
+    \ external scripts that use **Storage API context** with table IDs like `in.c-bucket.table`.\n\
+    \n**Key Environment Variables** (automatically set in workspace):\n- `KBC_PROJECT_ID`\
+    \ - Workspace project identifier\n- `KBC_BUCKET_ID` - Workspace bucket identifier\
+    \  \n- `KBC_TABLE_NAME` - Workspace table name\n\nSee [Storage API Context Documentation](02-storage-api.md#context-project-vs-workspace)\
+    \ for detailed explanation of workspace vs project contexts.\n\n## Key Concepts\n\
+    \n### What are Data Apps?\n\nData Apps are containerized Streamlit applications\
+    \ that:\n- Run inside Keboola's infrastructure\n- Have direct access to project\
+    \ data via workspace\n- Support interactive filtering, visualization, and exploration\n\
+    - Can be shared with team members\n- Auto-scale based on usage\n\n### Architecture\
+    \ Pattern: SQL-First\n\n**Core Principle**: Push computation to the database,\
+    \ never load large datasets into Python.\n\nWhy?\n- Keboola workspaces (Snowflake,\
+    \ Redshift, BigQuery) are optimized for queries\n- Loading data into Streamlit\
+    \ doesn't scale\n- SQL aggregation is 10-100x faster than pandas\n\n## Project\
+    \ Structure\n\n```\nmy-dataapp/\n├── streamlit_app.py          # Main app entry\
+    \ point with sidebar\n├── pages/\n│   ├── 01_Overview.py        # First page\n\
+    │   ├── 02_Analytics.py       # Second page\n│   └── 03_Details.py         # Third\
+    \ page\n├── utils/\n│   ├── data_loader.py        # Centralized data access\n\
+    │   └── config.py             # Environment configuration\n├── requirements.txt\
+    \          # Python dependencies\n└── README.md                 # Documentation\n\
+    ```\n\n## Environment Setup\n\n### Local Development\n\nData apps must work in\
+    \ two environments:\n\n1. **Local Development**: Use Keboola Storage API\n2. **Production**:\
+    \ Use Keboola workspace connection\n\n```python\n# utils/config.py\nimport os\n\
+    import streamlit as st\n\ndef get_connection_mode():\n    \"\"\"Detect if running\
+    \ locally or in Keboola.\"\"\"\n    return 'workspace' if 'KBC_PROJECT_ID' in\
+    \ os.environ else 'local'\n\ndef get_storage_token():\n    \"\"\"Get Storage API\
+    \ token from environment.\"\"\"\n    return os.environ.get('KEBOOLA_TOKEN')\n\n\
+    def get_stack_url():\n    \"\"\"Get Keboola stack URL.\"\"\"\n    return os.environ.get('KEBOOLA_STACK_URL',\
     \ 'connection.keboola.com')\n```\n\n### Connection Setup\n\n```python\n# utils/data_loader.py\n\
     import os\nimport streamlit as st\nfrom utils.config import get_connection_mode\n\
     \n@st.cache_resource\ndef get_connection():\n    \"\"\"Get database connection\
@@ -549,5 +637,20 @@ knowledge_base:
     \ = default_value\n\nwidget = st.text_input(\"Label\", value=st.session_state.my_value)\n\
     ```\n\n## Resources\n\n- [Streamlit Documentation](https://docs.streamlit.io)\n\
     - [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)\n\
-    - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)\n"
+    - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)\n\
+    \ndef get_table_name():\n    \"\"\"Get fully qualified table name.\n    \n   \
+    \ IMPORTANT: Data Apps use WORKSPACE CONTEXT, not Storage API context.\n    \n\
+    \    Workspace context:\n    - Direct database connection (Snowflake/Redshift/BigQuery)\n\
+    \    - Table names: \"PROJECT_ID\".\"BUCKET_ID\".\"TABLE_NAME\"\n    - Uses KBC_PROJECT_ID\
+    \ (workspace project, not Storage API project)\n    \n    Storage API context\
+    \ (for local development):\n    - REST API calls\n    - Table IDs: in.c-bucket.table\n\
+    \    - Uses KEBOOLA_TOKEN for authentication\n    \n    See docs/keboola/02-storage-api.md\
+    \ for context explanation.\n    \"\"\"\n    mode = get_connection_mode()\n\n \
+    \   if mode == 'workspace':\n        # WORKSPACE CONTEXT: Direct database access\n\
+    \        # Table name format: \"DATABASE\".\"SCHEMA\".\"TABLE\"\n        # Example:\
+    \ \"12345\".\"in.c-main\".\"customers\"\n        return f'\"{os.environ[\"KBC_PROJECT_ID\"\
+    ]}\".\" {os.environ[\"KBC_BUCKET_ID\"]}\".\" {os.environ[\"KBC_TABLE_NAME\"]}\"\
+    '\n    else:\n        # LOCAL DEVELOPMENT: Storage API context\n        # Table\
+    \ ID format: stage.c-bucket.table\n        # Example: in.c-main.customers\n  \
+    \      return 'in.c-analysis.usage_data'\n"
   format: markdown

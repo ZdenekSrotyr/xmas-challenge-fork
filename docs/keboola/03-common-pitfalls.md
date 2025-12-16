@@ -246,3 +246,77 @@ response = requests.post(
 **Rule of thumb**:
 - Creating new table: `/buckets/{bucket}/tables-async`
 - Importing to existing table: `/tables/{table_id}/import-async`
+
+## 8. Mixing Workspace and Storage API Contexts
+
+**Problem**: Using Storage API table IDs in workspace queries or vice versa
+
+**Solution**: Understand and use the correct context for your environment:
+
+```python
+# ❌ WRONG - Using Storage API table ID in workspace (Data App)
+import streamlit as st
+conn = st.connection('snowflake', type='snowflake')
+# This will fail - wrong table name format for workspace
+query = "SELECT * FROM in.c-main.customers"
+df = conn.query(query)
+
+# ✅ CORRECT - Using workspace table name in Data App
+import os
+project_id = os.environ["KBC_PROJECT_ID"]
+bucket_id = "in.c-main"
+table_name = "customers"
+
+# Workspace uses fully qualified names with quotes
+query = f'SELECT * FROM "{project_id}"."{bucket_id}"."{table_name}"'
+df = conn.query(query)
+
+# ❌ WRONG - Using workspace table name in Storage API
+import requests
+response = requests.post(
+    # This endpoint doesn't exist - wrong format
+    f"https://{stack_url}/v2/storage/tables/{project_id}.{bucket_id}.{table_name}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+
+# ✅ CORRECT - Using Storage API table ID format
+response = requests.post(
+    # Storage API uses stage.c-bucket.table format
+    f"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+```
+
+**Context Guide**:
+
+| Environment | Context | Table Format | Example |
+|-------------|---------|--------------|----------|
+| Data Apps | Workspace | `"PROJECT"."BUCKET"."TABLE"` | `"12345"."in.c-main"."customers"` |
+| External Scripts | Storage API | `stage.c-bucket.table` | `in.c-main.customers` |
+| Transformations | Workspace | `"PROJECT"."BUCKET"."TABLE"` | `"12345"."in.c-main"."customers"` |
+| Python Components | Storage API | `stage.c-bucket.table` | `in.c-main.customers` |
+
+**How to identify your context**:
+
+```python
+import os
+
+# Check for workspace environment variables
+if 'KBC_PROJECT_ID' in os.environ and 'KBC_BUCKET_ID' in os.environ:
+    print("You are in WORKSPACE context")
+    print("Use: direct database connections with fully qualified names")
+    print(f'Example: "{os.environ["KBC_PROJECT_ID"]}"."in.c-main"."table"')
+else:
+    print("You are in STORAGE API context")
+    print("Use: REST API calls with stage.c-bucket.table format")
+    print("Example: in.c-main.table")
+```
+
+**Why this matters**:
+- Storage API uses HTTP endpoints and requires `in.c-bucket.table` format
+- Workspace uses direct SQL queries and requires `"PROJECT"."BUCKET"."TABLE"` format
+- Mixing them causes "table not found" or "invalid endpoint" errors
+- Data Apps automatically run in workspace context
+- External integrations use Storage API context
+
+See [Storage API Context Documentation](02-storage-api.md#context-project-vs-workspace) for detailed explanation.

@@ -4,6 +4,23 @@
 
 Keboola Data Apps are Streamlit applications that run directly in the Keboola platform, providing interactive dashboards and analytics tools. They connect to Keboola Storage and can query data from workspace tables.
 
+### Important: Data Apps Use Workspace Context
+
+Data Apps operate in **workspace context**, which means:
+- Direct connection to the database (Snowflake/Redshift/BigQuery)
+- SQL queries instead of REST API calls
+- Table names in format: `"PROJECT_ID"."BUCKET_ID"."TABLE_NAME"`
+- Automatic authentication via workspace credentials
+
+This is different from external scripts that use **Storage API context** with table IDs like `in.c-bucket.table`.
+
+**Key Environment Variables** (automatically set in workspace):
+- `KBC_PROJECT_ID` - Workspace project identifier
+- `KBC_BUCKET_ID` - Workspace bucket identifier  
+- `KBC_TABLE_NAME` - Workspace table name
+
+See [Storage API Context Documentation](02-storage-api.md#context-project-vs-workspace) for detailed explanation of workspace vs project contexts.
+
 ## Key Concepts
 
 ### What are Data Apps?
@@ -521,3 +538,33 @@ widget = st.text_input("Label", value=st.session_state.my_value)
 - [Streamlit Documentation](https://docs.streamlit.io)
 - [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)
 - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)
+
+def get_table_name():
+    """Get fully qualified table name.
+    
+    IMPORTANT: Data Apps use WORKSPACE CONTEXT, not Storage API context.
+    
+    Workspace context:
+    - Direct database connection (Snowflake/Redshift/BigQuery)
+    - Table names: "PROJECT_ID"."BUCKET_ID"."TABLE_NAME"
+    - Uses KBC_PROJECT_ID (workspace project, not Storage API project)
+    
+    Storage API context (for local development):
+    - REST API calls
+    - Table IDs: in.c-bucket.table
+    - Uses KEBOOLA_TOKEN for authentication
+    
+    See docs/keboola/02-storage-api.md for context explanation.
+    """
+    mode = get_connection_mode()
+
+    if mode == 'workspace':
+        # WORKSPACE CONTEXT: Direct database access
+        # Table name format: "DATABASE"."SCHEMA"."TABLE"
+        # Example: "12345"."in.c-main"."customers"
+        return f'"{os.environ["KBC_PROJECT_ID"]}"." {os.environ["KBC_BUCKET_ID"]}"." {os.environ["KBC_TABLE_NAME"]}"'
+    else:
+        # LOCAL DEVELOPMENT: Storage API context
+        # Table ID format: stage.c-bucket.table
+        # Example: in.c-main.customers
+        return 'in.c-analysis.usage_data'
