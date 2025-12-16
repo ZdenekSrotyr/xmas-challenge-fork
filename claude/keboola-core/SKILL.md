@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T04:43:42.490881
+> Generated: 2025-12-16T08:10:59.288839
 
 ---
 
@@ -359,7 +359,7 @@ def safe_api_call(url, headers):
 
 ```json
 {
-  "generated_at": "2025-12-16T04:43:42.490881",
+  "generated_at": "2025-12-16T08:10:59.288839",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
