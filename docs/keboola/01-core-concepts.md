@@ -18,8 +18,20 @@ Keboola Storage is where your data lives. It consists of:
 ### Components
 Components are the building blocks:
 - **Extractors**: Pull data from external sources
-- **Transformations**: Process and modify data
+- **Transformations**: Process and modify data (see [Custom Python Components](04-custom-components.md))
 - **Writers**: Send data to external destinations
+
+#### Two Approaches to Working with Keboola
+
+1. **Direct Storage API Calls** (covered in [Storage API](02-storage-api.md))
+   - Use REST API directly with HTTP requests
+   - Good for one-off scripts, external orchestration, quick prototypes
+   - Requires manual handling of I/O, authentication, job polling
+
+2. **Custom Python Components** (covered in [Custom Components](04-custom-components.md))
+   - Use `keboola.component` library for standardized structure
+   - Recommended for production transformations and reusable components
+   - Automatic I/O mapping, configuration UI, state management, deployment integration
 
 ## Authentication
 

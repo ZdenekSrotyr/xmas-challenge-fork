@@ -1,5 +1,7 @@
 # Storage API
 
+> **Note**: This guide covers direct Storage API usage via HTTP requests. For production transformations, consider using [Custom Python Components](04-custom-components.md) which provide a more robust framework with automatic I/O handling, configuration management, and deployment integration.
+
 ## Reading Tables
 
 ### List All Tables

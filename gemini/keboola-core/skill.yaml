@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T13:59:46.674115'
+  generated_at: '2025-12-16T14:06:11.530217'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -15,29 +15,42 @@ knowledge_base:
     \ Storage\nKeboola Storage is where your data lives. It consists of:\n- **Buckets**:\
     \ Logical containers for tables\n- **Tables**: The actual data\n- **Files**: Temporary\
     \ file storage\n\n### Components\nComponents are the building blocks:\n- **Extractors**:\
-    \ Pull data from external sources\n- **Transformations**: Process and modify data\n\
-    - **Writers**: Send data to external destinations\n\n## Authentication\n\nUse\
-    \ Storage API tokens for authentication:\n\n```python\nimport os\nimport requests\n\
-    \nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"\
-    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\"\
-    : STORAGE_TOKEN,\n    \"Content-Type\": \"application/json\"\n}\n\nresponse =\
-    \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n\
-    )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
-    \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
-    - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
-    \ stack URL, not a hardcoded one.\n"
+    \ Pull data from external sources\n- **Transformations**: Process and modify data\
+    \ (see [Custom Python Components](04-custom-components.md))\n- **Writers**: Send\
+    \ data to external destinations\n\n#### Two Approaches to Working with Keboola\n\
+    \n1. **Direct Storage API Calls** (covered in [Storage API](02-storage-api.md))\n\
+    \   - Use REST API directly with HTTP requests\n   - Good for one-off scripts,\
+    \ external orchestration, quick prototypes\n   - Requires manual handling of I/O,\
+    \ authentication, job polling\n\n2. **Custom Python Components** (covered in [Custom\
+    \ Components](04-custom-components.md))\n   - Use `keboola.component` library\
+    \ for standardized structure\n   - Recommended for production transformations\
+    \ and reusable components\n   - Automatic I/O mapping, configuration UI, state\
+    \ management, deployment integration\n\n## Authentication\n\nUse Storage API tokens\
+    \ for authentication:\n\n```python\nimport os\nimport requests\n\nSTORAGE_TOKEN\
+    \ = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"KEBOOLA_STACK_URL\"\
+    , \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\": STORAGE_TOKEN,\n\
+    \    \"Content-Type\": \"application/json\"\n}\n\nresponse = requests.get(\n \
+    \   f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n)\n```\n\
+    \n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n- **US**:\
+    \ connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n- **Azure**:\
+    \ connection.north-europe.azure.keboola.com\n\nAlways use your project's stack\
+    \ URL, not a hardcoded one.\n"
   format: markdown
 - source: 02-storage-api.md
-  content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\
-    import requests\nimport os\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\"\
-    , \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\n\nresponse\
-    \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": token}\n)\n\ntables = response.json()\nfor table in tables:\n\
-    \    print(f\"{table['id']}: {table['rowsCount']} rows\")\n```\n\n### Export Table\
-    \ Data\n\n```python\nimport time\n\n# Start async export job (NOTE: POST method\
-    \ required)\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
-    ,\n    headers={\"X-StorageApi-Token\": token}\n)\nresponse.raise_for_status()\n\
-    \njob_id = response.json()[\"id\"]\n\n# Poll for completion with timeout\ntimeout\
+  content: "# Storage API\n\n> **Note**: This guide covers direct Storage API usage\
+    \ via HTTP requests. For production transformations, consider using [Custom Python\
+    \ Components](04-custom-components.md) which provide a more robust framework with\
+    \ automatic I/O handling, configuration management, and deployment integration.\n\
+    \n## Reading Tables\n\n### List All Tables\n\n```python\nimport requests\nimport\
+    \ os\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
+    )\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\n\nresponse = requests.get(\n    f\"\
+    https://{stack_url}/v2/storage/tables\",\n    headers={\"X-StorageApi-Token\"\
+    : token}\n)\n\ntables = response.json()\nfor table in tables:\n    print(f\"{table['id']}:\
+    \ {table['rowsCount']} rows\")\n```\n\n### Export Table Data\n\n```python\nimport\
+    \ time\n\n# Start async export job (NOTE: POST method required)\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token}\n)\nresponse.raise_for_status()\n\n\
+    job_id = response.json()[\"id\"]\n\n# Poll for completion with timeout\ntimeout\
     \ = 300  # 5 minutes\nstart_time = time.time()\n\nwhile time.time() - start_time\
     \ < timeout:\n    job_response = requests.get(\n        f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
     ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    job_response.raise_for_status()\n\
