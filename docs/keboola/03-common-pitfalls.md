@@ -246,3 +246,86 @@ response = requests.post(
 **Rule of thumb**:
 - Creating new table: `/buckets/{bucket}/tables-async`
 - Importing to existing table: `/tables/{table_id}/import-async`
+
+## 8. Confusing Workspace Context with Project Context
+
+**Problem**: Using workspace IDs in Storage API calls or Storage API table names in workspace SQL
+
+**Solution**: Understand the context boundary:
+
+```python
+# ❌ WRONG - Using workspace-style table reference in Storage API
+import requests
+project_id = os.environ['KBC_PROJECT_ID']
+table_ref = f'"{project_id}"."in.c-main"."customers"'  # Snowflake format
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_ref}/export-async",  # FAILS
+    headers={"X-StorageApi-Token": token}
+)
+
+# ✅ CORRECT - Storage API uses bucket.table format (no project ID)
+table_id = "in.c-main.customers"  # Storage API format
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+
+# ❌ WRONG - Using Storage API format in workspace SQL
+import streamlit as st
+conn = st.connection('snowflake', type='snowflake')
+table_id = "in.c-main.customers"  # Storage API format
+
+query = f"SELECT * FROM {table_id}"  # FAILS - not valid SQL
+df = conn.query(query)
+
+# ✅ CORRECT - Workspace SQL requires fully qualified names
+project_id = os.environ['KBC_PROJECT_ID']
+table_ref = f'"{project_id}"."in.c-main"."customers"'  # Snowflake format
+
+query = f"SELECT * FROM {table_ref}"
+df = conn.query(query)
+```
+
+**Rule of thumb**:
+- **Storage API** (REST endpoints): Use `bucket.table` format, no project ID
+- **Workspace** (SQL queries): Use `"PROJECT_ID"."bucket"."table"` format
+
+**Why the difference?**
+
+- Storage API operates at **project level** - it knows your project from the token
+- Workspace operates at **database level** - PROJECT_ID is the database name in Snowflake
+
+### Context Detection Pattern
+
+```python
+def get_table_reference(bucket, table):
+    """Get correct table reference for current context."""
+    if 'KBC_PROJECT_ID' in os.environ:
+        # Workspace context - return Snowflake-qualified name
+        project_id = os.environ['KBC_PROJECT_ID']
+        return f'"{project_id}"."{bucket}"."{table}"'
+    else:
+        # Storage API context - return API format
+        return f"{bucket}.{table}"
+
+# Usage
+table_ref = get_table_reference('in.c-main', 'customers')
+
+if 'KBC_PROJECT_ID' in os.environ:
+    # Workspace: Use in SQL
+    query = f"SELECT * FROM {table_ref}"
+    df = conn.query(query)
+else:
+    # Storage API: Use in endpoint
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_ref}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+```
+
+**Common Error Messages**:
+
+- `Table 'in.c-main.customers' does not exist` (in workspace) → Use quoted, qualified name
+- `Invalid table ID` (in Storage API) → Remove quotes and project ID
+- `SQL compilation error` (in workspace) → Missing quotes or project ID

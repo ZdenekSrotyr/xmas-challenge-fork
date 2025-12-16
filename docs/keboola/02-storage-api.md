@@ -295,3 +295,159 @@ def export_table_to_file(table_id, output_file, timeout=300):
 export_table_to_file(table_id, output_file)
 ```
 
+
+## Storage vs Workspace Context
+
+### Understanding the Difference
+
+**Storage API** operates at the **project level**:
+- Uses project-wide Storage API token
+- Manages permanent data storage
+- Uses table IDs like `in.c-main.customers`
+- Accessed via REST API endpoints
+- Used for: data ingestion, component development, orchestration
+
+**Workspace** operates at the **workspace level**:
+- Uses workspace-specific database credentials
+- Provides temporary SQL access to project data
+- Uses qualified names like `"PROJECT_ID"."in.c-main"."customers"`
+- Accessed via native database connections (JDBC/ODBC)
+- Used for: Data Apps, transformations, SQL analysis
+
+### When to Use Storage API (Project Context)
+
+✅ **Use Storage API when**:
+- Developing custom components
+- Running scripts outside Keboola
+- Managing buckets and tables
+- Orchestrating data pipelines
+- Local development/testing
+
+```python
+# Example: Local development script
+import os
+import requests
+
+token = os.environ['KEBOOLA_TOKEN']
+stack_url = os.environ.get('KEBOOLA_STACK_URL', 'connection.keboola.com')
+
+# Project-level API call
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": token}
+)
+
+tables = response.json()
+for table in tables:
+    print(f"Project table: {table['id']}")
+```
+
+### When to Use Workspace (Workspace Context)
+
+✅ **Use Workspace when**:
+- Building Data Apps (production runtime)
+- Writing SQL transformations
+- Running queries in Snowflake/Redshift workspace
+- Need direct database performance
+
+```python
+# Example: Data App in production
+import os
+import streamlit as st
+
+if 'KBC_PROJECT_ID' in os.environ:
+    # Running in workspace - use direct connection
+    conn = st.connection('snowflake', type='snowflake')
+    
+    # Workspace-level SQL query with qualified names
+    project_id = os.environ['KBC_PROJECT_ID']
+    query = f'''
+        SELECT * 
+        FROM "{project_id}"."in.c-main"."customers"
+        WHERE "status" = 'active'
+    '''
+    df = conn.query(query)
+else:
+    # Local development - use Storage API
+    # (see Storage API examples above)
+    pass
+```
+
+### Hybrid Pattern: Support Both Contexts
+
+Data Apps should support both contexts for local development and production:
+
+```python
+# utils/data_loader.py
+import os
+import streamlit as st
+import requests
+
+def get_connection_mode():
+    """Detect runtime environment."""
+    return 'workspace' if 'KBC_PROJECT_ID' in os.environ else 'storage_api'
+
+@st.cache_resource
+def get_connection():
+    """Get appropriate connection for environment."""
+    mode = get_connection_mode()
+    
+    if mode == 'workspace':
+        # Production: Use workspace connection
+        return st.connection('snowflake', type='snowflake')
+    else:
+        # Local: Return Storage API client
+        return StorageAPIClient(
+            token=os.environ['KEBOOLA_TOKEN'],
+            stack_url=os.environ.get('KEBOOLA_STACK_URL')
+        )
+
+def get_table_reference(bucket_id, table_name):
+    """Get correct table reference for environment."""
+    mode = get_connection_mode()
+    
+    if mode == 'workspace':
+        # Workspace: Fully qualified name
+        project_id = os.environ['KBC_PROJECT_ID']
+        return f'"{project_id}"."{bucket_id}"."{table_name}"'
+    else:
+        # Storage API: bucket.table format
+        return f"{bucket_id}.{table_name}"
+
+# Usage in Data App
+@st.cache_data(ttl=300)
+def load_customers():
+    conn = get_connection()
+    table_ref = get_table_reference('in.c-main', 'customers')
+    
+    if get_connection_mode() == 'workspace':
+        query = f'SELECT * FROM {table_ref}'
+        return conn.query(query)
+    else:
+        # Use Storage API export
+        return conn.export_table(table_ref)
+```
+
+### Common Pitfalls
+
+❌ **Don't mix contexts**:
+```python
+# WRONG: Using Storage API table ID in workspace SQL
+query = f"SELECT * FROM in.c-main.customers"  # Fails in workspace
+
+# CORRECT: Use qualified names in workspace
+query = f'SELECT * FROM "{project_id}"."in.c-main"."customers"'
+```
+
+❌ **Don't use workspace credentials in Storage API**:
+```python
+# WRONG: Workspace connection for Storage API call
+conn = st.connection('snowflake')  # This is workspace, not Storage API
+
+# CORRECT: Use Storage API token
+import requests
+response = requests.get(
+    f"https://{stack_url}/v2/storage/tables",
+    headers={"X-StorageApi-Token": storage_token}
+)
+```
