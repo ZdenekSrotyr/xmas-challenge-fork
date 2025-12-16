@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T16:33:18.036536'
+  generated_at: '2025-12-16T17:00:25.594570'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -45,7 +45,81 @@ knowledge_base:
     \ API when:\n# - Running outside Keboola (local development)\n# - Managing tables/buckets\n\
     # - Orchestrating data flows\nelse:\n    import requests\n    response = requests.post(\n\
     \        f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
-    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n"
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n\n**When to Use\
+    \ What**:\n\n```python\n# Use WORKSPACE when:\n# - Running inside Data App (production)\n\
+    # - Running transformation\n# - Direct SQL queries needed\nif 'KBC_PROJECT_ID'\
+    \ in os.environ:\n    conn = st.connection('snowflake', type='snowflake')\n  \
+    \  query = f'SELECT * FROM \"{os.environ[\"KBC_PROJECT_ID\"]}\".\"{os.environ[\"\
+    in.c-main\"]}\".\"customers\"'\n    df = conn.query(query)\n\n# Use STORAGE API\
+    \ when:\n# - Running outside Keboola (local development)\n# - Managing tables/buckets\n\
+    # - Orchestrating data flows\nelse:\n    import requests\n    response = requests.post(\n\
+    \        f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n\n## Webhooks\n\
+    \nWebhooks allow you to receive real-time notifications about events in your Keboola\
+    \ project, such as job completions, errors, and configuration changes.\n\n###\
+    \ Setting Up Webhooks\n\nWebhooks are configured at the project level via the\
+    \ Storage API:\n\n```python\nimport requests\nimport os\n\nstack_url = os.environ.get(\"\
+    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"\
+    ]\n\n# Create a webhook\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/webhooks\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"application/json\"\n    },\n    json={\n        \"url\": \"https://your-app.com/webhook\"\
+    ,\n        \"events\": [\n            \"storage.jobSucceeded\",\n            \"\
+    storage.jobFailed\",\n            \"storage.tableCreated\"\n        ],\n     \
+    \   \"name\": \"My Webhook\"\n    }\n)\nresponse.raise_for_status()\n\nwebhook\
+    \ = response.json()\nprint(f\"Webhook created with ID: {webhook['id']}\")\n```\n\
+    \n### Event Types\n\nCommon webhook event types:\n\n**Job Events**:\n- `storage.jobSucceeded`\
+    \ - Job completed successfully\n- `storage.jobFailed` - Job failed with error\n\
+    - `storage.jobProcessing` - Job started processing\n- `storage.jobWaiting` - Job\
+    \ is queued\n\n**Table Events**:\n- `storage.tableCreated` - New table created\n\
+    - `storage.tableImported` - Data imported to table\n- `storage.tableDeleted` -\
+    \ Table deleted\n\n**Configuration Events**:\n- `orchestration.jobSucceeded` -\
+    \ Orchestration completed\n- `orchestration.jobFailed` - Orchestration failed\n\
+    \n### Webhook Payload Format\n\nWebhook requests are POST requests with JSON payload:\n\
+    \n```json\n{\n  \"event\": \"storage.jobSucceeded\",\n  \"data\": {\n    \"id\"\
+    : \"12345678\",\n    \"runId\": \"12345678.87654321\",\n    \"project\": {\n \
+    \     \"id\": \"6789\",\n      \"name\": \"My Project\"\n    },\n    \"component\"\
+    : \"keboola.ex-db-mysql\",\n    \"configurationId\": \"123\",\n    \"status\"\
+    : \"success\",\n    \"startTime\": \"2024-01-15T10:30:00+0000\",\n    \"endTime\"\
+    : \"2024-01-15T10:35:00+0000\",\n    \"durationSeconds\": 300\n  },\n  \"createdTime\"\
+    : \"2024-01-15T10:35:01+0000\"\n}\n```\n\n### Webhook Security (Signature Verification)\n\
+    \nAll webhook requests include an `X-Kbc-Signature` header with HMAC-SHA256 signature\
+    \ for verification:\n\n```python\nimport hmac\nimport hashlib\nfrom flask import\
+    \ Flask, request, abort\n\napp = Flask(__name__)\nWEBHOOK_SECRET = \"your_webhook_token\"\
+    \  # From webhook creation response\n\n@app.route('/webhook', methods=['POST'])\n\
+    def handle_webhook():\n    # Get signature from header\n    received_signature\
+    \ = request.headers.get('X-Kbc-Signature')\n    if not received_signature:\n \
+    \       abort(401, \"Missing signature\")\n    \n    # Compute expected signature\n\
+    \    payload = request.get_data()\n    expected_signature = hmac.new(\n      \
+    \  WEBHOOK_SECRET.encode('utf-8'),\n        payload,\n        hashlib.sha256\n\
+    \    ).hexdigest()\n    \n    # Verify signature\n    if not hmac.compare_digest(received_signature,\
+    \ expected_signature):\n        abort(401, \"Invalid signature\")\n    \n    #\
+    \ Process webhook\n    event_data = request.json\n    print(f\"Received event:\
+    \ {event_data['event']}\")\n    \n    if event_data['event'] == 'storage.jobFailed':\n\
+    \        # Handle job failure\n        job_id = event_data['data']['id']\n   \
+    \     send_alert(f\"Job {job_id} failed\")\n    \n    return {\"status\": \"ok\"\
+    }, 200\n```\n\n### Managing Webhooks\n\n**List webhooks**:\n```python\nresponse\
+    \ = requests.get(\n    f\"https://{stack_url}/v2/storage/webhooks\",\n    headers={\"\
+    X-StorageApi-Token\": token}\n)\nwebhooks = response.json()\n```\n\n**Update webhook**:\n\
+    ```python\nwebhook_id = \"123\"\nresponse = requests.put(\n    f\"https://{stack_url}/v2/storage/webhooks/{webhook_id}\"\
+    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
+    : \"application/json\"\n    },\n    json={\n        \"url\": \"https://your-app.com/new-webhook\"\
+    ,\n        \"events\": [\"storage.jobSucceeded\"]\n    }\n)\n```\n\n**Delete webhook**:\n\
+    ```python\nwebhook_id = \"123\"\nresponse = requests.delete(\n    f\"https://{stack_url}/v2/storage/webhooks/{webhook_id}\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\n```\n\n### Best Practices\n\
+    \n**DO**:\n- Always verify webhook signatures to prevent spoofing\n- Use HTTPS\
+    \ endpoints for webhook URLs\n- Respond quickly (within 30 seconds) to avoid timeouts\n\
+    - Process webhooks asynchronously if heavy processing is needed\n- Store webhook\
+    \ secrets securely (environment variables, secret managers)\n- Log webhook events\
+    \ for debugging\n- Handle duplicate events idempotently\n\n**DON'T**:\n- Skip\
+    \ signature verification\n- Use HTTP (unencrypted) webhook endpoints\n- Perform\
+    \ long-running operations in webhook handler\n- Hardcode webhook secrets in code\n\
+    - Assume webhooks arrive in order\n- Ignore retry logic for failed deliveries\n\
+    \n### Webhook Retries\n\nKeboola automatically retries failed webhook deliveries:\n\
+    - Retries up to 3 times with exponential backoff\n- Considers 2xx status codes\
+    \ as success\n- Timeout after 30 seconds per attempt\n\n### Testing Webhooks Locally\n\
+    \nUse tunneling tools to test webhooks during development:\n\n```bash\n# Using\
+    \ ngrok\nngrok http 5000\n\n# Use the ngrok URL for webhook configuration\n# https://abc123.ngrok.io/webhook\n\
+    ```\n"
   format: markdown
 - source: 02-storage-api.md
   content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\
