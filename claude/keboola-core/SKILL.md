@@ -17,6 +17,10 @@ including API usage, best practices, and common pitfalls.
 - User needs help with Keboola Jobs API
 - User asks about regional stacks or Stack URLs
 - User encounters Keboola-related errors
+- User wants to create custom Python transformations or components
+- User asks about keboola.component library
+- User needs help with Input/Output mapping
+- User asks about component deployment or Docker configuration
 
 ---
 
@@ -355,13 +359,459 @@ def safe_api_call(url, headers):
 
 ---
 
+<!-- Source: 04-custom-python-components.md -->
+
+# Custom Python Components
+
+## Overview
+
+While you can interact with Keboola Storage directly via REST API, the recommended approach for custom Python transformations is to use the `keboola.component` library. This provides:
+- Standardized component structure
+- Automatic Input/Output mapping
+- Configuration and manifest handling
+- Error handling conventions
+- Local testing capabilities
+
+## Component Structure
+
+A Keboola Python component follows this structure:
+
+```
+my-component/
+├── src/
+│   └── component.py          # Main component code
+├── tests/
+│   └── test_component.py     # Unit tests
+├── Dockerfile                 # Docker configuration
+├── requirements.txt           # Python dependencies
+├── component_config/
+│   └── component.json        # Component definition
+└── README.md
+```
+
+## Basic Component Template
+
+### component.py
+
+```python
+import csv
+from pathlib import Path
+from keboola.component.base import ComponentBase
+from keboola.component.exceptions import UserException
+
+class Component(ComponentBase):
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        """
+        Main execution method.
+        Input tables are in: self.get_input_tables_definitions()
+        Output tables go to: self.get_output_tables_definitions()
+        """
+        # Get parameters from configuration
+        params = self.configuration.parameters
+        
+        # Read input table
+        input_tables = self.get_input_tables_definitions()
+        if not input_tables:
+            raise UserException("No input tables specified")
+        
+        input_table = input_tables[0]
+        input_path = Path(input_table.full_path)
+        
+        # Process data
+        with open(input_path, 'r') as input_file:
+            reader = csv.DictReader(input_file)
+            data = list(reader)
+            
+            # Your transformation logic here
+            processed_data = self.process_data(data, params)
+        
+        # Write output table
+        output_tables = self.get_output_tables_definitions()
+        if output_tables:
+            output_table = output_tables[0]
+            output_path = Path(output_table.full_path)
+            
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(output_path, 'w', newline='') as output_file:
+                if processed_data:
+                    writer = csv.DictWriter(output_file, fieldnames=processed_data[0].keys())
+                    writer.writeheader()
+                    writer.writerows(processed_data)
+    
+    def process_data(self, data, params):
+        """Your custom processing logic."""
+        # Example: filter rows based on parameter
+        threshold = params.get('threshold', 0)
+        return [row for row in data if int(row.get('value', 0)) > threshold]
+
+if __name__ == "__main__":
+    try:
+        comp = Component()
+        comp.run()
+    except UserException as exc:
+        print(exc)
+        exit(1)
+    except Exception as exc:
+        print(exc)
+        exit(2)
+```
+
+### Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /code/
+
+# Install dependencies
+COPY requirements.txt /code/
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/ /code/src/
+
+# Run component
+CMD ["python", "-u", "src/component.py"]
+```
+
+### requirements.txt
+
+```
+keboola.component==1.8.1
+```
+
+## Input/Output Mapping Configuration
+
+### Configuration Format
+
+When running your component in Keboola, you configure Input/Output mapping via the UI or API:
+
+```json
+{
+  "storage": {
+    "input": {
+      "tables": [
+        {
+          "source": "in.c-main.customers",
+          "destination": "customers.csv",
+          "columns": ["id", "name", "value"]
+        }
+      ]
+    },
+    "output": {
+      "tables": [
+        {
+          "source": "output.csv",
+          "destination": "out.c-main.processed",
+          "incremental": false,
+          "primary_key": ["id"]
+        }
+      ]
+    }
+  },
+  "parameters": {
+    "threshold": 100
+  }
+}
+```
+
+### Accessing Input Tables
+
+```python
+# Get all input tables
+input_tables = self.get_input_tables_definitions()
+
+for table in input_tables:
+    print(f"Table: {table.name}")
+    print(f"Path: {table.full_path}")
+    print(f"Columns: {table.columns}")
+    
+    # Read the CSV file
+    with open(table.full_path, 'r') as f:
+        reader = csv.DictReader(f)
+        data = list(reader)
+```
+
+### Writing Output Tables
+
+```python
+# Get output table definition
+output_tables = self.get_output_tables_definitions()
+output_table = output_tables[0]
+
+# Write data
+with open(output_table.full_path, 'w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=['id', 'name', 'processed_value'])
+    writer.writeheader()
+    writer.writerows(processed_data)
+
+# Create manifest for metadata (optional)
+self.write_manifest(output_table.full_path, {
+    'primary_key': ['id'],
+    'incremental': False
+})
+```
+
+## Local Testing
+
+### Test Data Structure
+
+Create a local data folder:
+
+```
+data/
+├── in/
+│   └── tables/
+│       └── customers.csv
+├── out/
+│   └── tables/
+└── config.json
+```
+
+### config.json
+
+```json
+{
+  "storage": {
+    "input": {
+      "tables": [
+        {
+          "source": "in.c-main.customers",
+          "destination": "customers.csv"
+        }
+      ]
+    },
+    "output": {
+      "tables": [
+        {
+          "source": "output.csv",
+          "destination": "out.c-main.processed"
+        }
+      ]
+    }
+  },
+  "parameters": {
+    "threshold": 100
+  }
+}
+```
+
+### Running Locally
+
+```bash
+# Set environment variable
+export KBC_DATADIR=./data/
+
+# Run component
+python src/component.py
+
+# Or with Docker
+docker build -t my-component .
+docker run --rm -v $(pwd)/data:/data -e KBC_DATADIR=/data my-component
+```
+
+## State Management (Incremental Loads)
+
+For incremental processing, use state files:
+
+```python
+from keboola.component.base import ComponentBase
+import json
+from datetime import datetime
+
+class Component(ComponentBase):
+    def run(self):
+        # Load previous state
+        state = self.get_state_file()
+        last_run = state.get('last_run_timestamp')
+        
+        # Process only new data
+        if last_run:
+            print(f"Loading data since {last_run}")
+            # Filter data based on last_run
+        
+        # Process data...
+        
+        # Save new state
+        new_state = {
+            'last_run_timestamp': datetime.now().isoformat(),
+            'rows_processed': len(processed_data)
+        }
+        self.write_state_file(new_state)
+```
+
+## Error Handling
+
+### User Errors vs System Errors
+
+```python
+from keboola.component.exceptions import UserException
+
+# User configuration error (exit code 1)
+if not params.get('required_param'):
+    raise UserException("Missing required parameter: required_param")
+
+# System error (exit code 2)
+try:
+    # Some operation
+    process_data()
+except Exception as e:
+    # Log error and re-raise
+    print(f"System error: {e}")
+    raise
+```
+
+## Deployment
+
+### Quick Start with Cookiecutter
+
+Use the official template:
+
+```bash
+pip install cookiecutter
+cookiecutter gh:keboola/cookiecutter-python-component
+```
+
+### GitHub Repository Setup
+
+1. Push your component to GitHub
+2. Set up GitHub Actions for CI/CD:
+
+```yaml
+# .github/workflows/build.yml
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: your-registry/my-component:${{ github.ref_name }}
+```
+
+### Register in Developer Portal
+
+Register your component via API:
+
+```python
+import requests
+
+response = requests.post(
+    "https://connection.keboola.com/v2/storage/dev-branches/",
+    headers={"X-StorageApi-Token": token},
+    json={
+        "name": "my-component",
+        "type": "transformation",
+        "repository": {
+            "type": "github",
+            "uri": "https://github.com/username/my-component"
+        }
+    }
+)
+```
+
+## Best Practices
+
+### 1. Always Use keboola.component Library
+
+```python
+# ❌ WRONG: Direct API calls in component
+import requests
+response = requests.get(f"https://{stack_url}/v2/storage/tables/{table_id}")
+
+# ✅ CORRECT: Use component framework
+from keboola.component.base import ComponentBase
+input_tables = self.get_input_tables_definitions()
+```
+
+### 2. Validate Input Early
+
+```python
+def run(self):
+    params = self.configuration.parameters
+    
+    # Validate required parameters
+    required = ['threshold', 'column_name']
+    missing = [p for p in required if p not in params]
+    if missing:
+        raise UserException(f"Missing required parameters: {', '.join(missing)}")
+    
+    # Continue with processing...
+```
+
+### 3. Log Progress
+
+```python
+import logging
+
+logging.info(f"Processing {len(data)} rows")
+logging.debug(f"Parameters: {params}")
+logging.warning(f"Skipped {skipped} invalid rows")
+```
+
+### 4. Handle Large Files Efficiently
+
+```python
+# ❌ WRONG: Loading entire file into memory
+with open(input_path) as f:
+    data = list(csv.DictReader(f))
+
+# ✅ CORRECT: Process in chunks
+def process_chunks(input_path, output_path, chunk_size=10000):
+    with open(input_path, 'r') as infile, open(output_path, 'w') as outfile:
+        reader = csv.DictReader(infile)
+        writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        
+        chunk = []
+        for row in reader:
+            chunk.append(process_row(row))
+            if len(chunk) >= chunk_size:
+                writer.writerows(chunk)
+                chunk = []
+        
+        if chunk:
+            writer.writerows(chunk)
+```
+
+## Related Documentation
+
+For component development details, refer to the component-developer documentation:
+- Architecture patterns
+- Testing strategies
+- CI/CD setup
+- Developer Portal integration
+
+
+---
+
 ## Metadata
 
 ```json
 {
   "generated_at": "2025-12-16T09:47:57.473968",
   "source_path": "docs/keboola",
-  "generator": "claude_generator.py v1.0"
+  "generator": "claude_generator.py v1.0",
+  "coverage": {
+    "storage_api": "complete",
+    "jobs_api": "complete",
+    "custom_components": "complete",
+    "component_deployment": "complete"
+  }
 }
 ```
 
