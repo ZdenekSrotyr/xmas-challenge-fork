@@ -1,643 +1,425 @@
-# Keboola AI Kit
+# 🧠 Self-Learning AI Knowledge System
 
-**Complete self-healing knowledge system for Claude Code + Keboola**
+> **A self-improving knowledge base for AI agents that learns from real user interactions**
 
-🎯 Makes Claude Code an expert in Keboola with AI-powered error reporting and continuous improvement.
+[![GitHub Pages](https://img.shields.io/badge/docs-live-brightgreen)](https://zdeneksrotyr.github.io/xmas-challenge-fork/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
+This repository implements a complete **self-healing documentation system** where AI agents (Claude, Gemini, etc.) continuously improve their knowledge by learning from user interactions. When agents encounter gaps in their knowledge, the system automatically captures those moments, analyzes them, and proposes documentation updates.
 
-## 🚀 Quick Start - How to Use
+## 🎯 What Makes This Special
 
-### Option 1: Install from GitHub (Recommended)
+Unlike traditional static documentation:
 
-```bash
-# Add this marketplace to Claude Code
-/plugin marketplace add ZdenekSrotyr/xmas-challenge-fork
+- **Learns from Real Usage**: Captures actual user-agent interactions
+- **AI-Powered Gap Detection**: Automatically identifies what's missing or wrong
+- **Self-Healing Loop**: Proposes fixes → Creates PRs → Merges safely → Better agent
+- **Multi-LLM Support**: Single source documentation generates skills for Claude, Gemini, and more
+- **Zero Manual Maintenance**: Documentation evolves automatically based on real needs
 
-# Install the plugins you need
-/plugin install keboola-core              # Core Keboola knowledge
-/plugin install component-developer        # Component development
-/plugin install dataapp-developer          # Data app development
-```
+## 🌐 Live Dashboard
 
-### Option 2: Install from Local Path
+View the knowledge base and learning dashboard:
+**https://zdeneksrotyr.github.io/xmas-challenge-fork/**
 
-```bash
-# Clone the repository
-git clone https://github.com/ZdenekSrotyr/xmas-challenge-fork.git
-cd xmas-challenge-fork
+Features:
+- 📚 **Documentation Browser**: Browse all docs with git history
+- 🧠 **Learning Dashboard**: See what the AI is learning in real-time
+- 📊 **Analytics**: Track interactions, gaps identified, and improvements
+- 🕐 **Timeline**: Complete change history from git
 
-# Install in Claude Code
-/plugin install /full/path/to/xmas-challenge-fork/plugins/keboola-core
-```
-
-### Verify Installation
-
-Ask Claude Code:
-```
-Can you explain the Keboola workspace hierarchy?
-```
-
-If the plugin is installed, Claude will provide a detailed explanation using the knowledge base.
-
----
-
-## 📚 What's Included
-
-### **keboola-core Plugin**
-- Storage API, Jobs API, Custom Python deployment
-- Workspace ID guidance (no more confusion!)
-- Input/Output mapping explained
-- MCP server integration
-- 7 common pitfalls with solutions
-- Working code examples
-
-### **component-developer Plugin**
-- Build production-ready Keboola components
-- Architecture patterns and best practices
-- UI schema development
-- Comprehensive testing
-
-### **dataapp-developer Plugin**
-- Build Streamlit data apps for Keboola
-- Validate → build → verify workflow
-- Data validation and visual verification
-
-### **Error Reporting System**
-- Automatic GitHub Issue creation
-- AI-powered triage (Claude Sonnet 4.5)
-- Self-healing knowledge base
-
-### **Templates**
-- Custom Python component template
-- Streamlit app template
-- Both with automated testing
-
----
-
-## 📖 Documentation
-
-- **Getting Started:** See installation above
-- **Test Scenarios:** [TEST_SCENARIOS.md](./TEST_SCENARIOS.md) - 21 comprehensive tests
-- **Implementation Details:** [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md)
-- **Original Challenge:** [CHALLENGE.md](./CHALLENGE.md)
-- **Error Reporter:** [hooks/README.md](./hooks/README.md)
-- **Templates:** [templates/README.md](./templates/README.md)
-
----
-
-## 💡 Example Usage
-
-### For End-Users
+## 🏗️ Architecture
 
 ```
-Q: "I want to export my customer data to Excel"
-A: Claude provides step-by-step instructions using business language
+┌─────────────┐
+│    User     │
+└──────┬──────┘
+       │ Uses AI agent
+       ▼
+┌─────────────────┐
+│  Claude/Gemini  │  ← Has knowledge from docs/
+└──────┬──────────┘
+       │ Conversation
+       ▼
+┌──────────────────┐
+│ Learning Capture │  ← Hook records interaction
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│   AI Analyzer    │  ← Identifies knowledge gaps
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│ Create Issue     │  ← Proposes documentation fix
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│  Auto-Triage     │  ← AI categorizes & prioritizes
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│  Generate PR     │  ← AI writes the fix
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│   Auto-Merge     │  ← Safe automatic merge
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│ Regenerate Skills│  ← docs/ → claude/ & gemini/
+└──────┬───────────┘
+       │
+       └──→ Better agent next time!
 ```
-
-### For Developers
-
-```
-Q: "Write Python code to read a table from Keboola Storage"
-A: Claude provides working code with proper error handling and job monitoring
-```
-
-### For Component Developers
-
-```
-Q: "How do I structure a Custom Python component?"
-A: Claude explains architecture, provides examples, and references best practices
-```
-
----
-
-## 🎯 Success Criteria - All Met
-
-✅ Claude writes working Python code for any Keboola API endpoint
-✅ Zero "workspace ID confusion" issues
-✅ Claude can read/write Input/Output mapping
-✅ End-users can use business language
-✅ 80%+ issues correctly auto-triaged
-✅ Knowledge base continuously improves
-
----
-
-## 📊 Statistics
-
-| Component | Files | Lines | Status |
-|-----------|-------|-------|--------|
-| keboola-core | 3 | 2,245 | ✅ Complete |
-| Templates | 19 | 4,700+ | ✅ Complete |
-| Error Reporter | 8 | 2,128 | ✅ Complete |
-| GitHub Actions | 13 | 2,987+ | ✅ Complete |
-| Metrics System | 9 | 2,300+ | ✅ Complete |
-| **TOTAL** | **95+** | **35,000+** | **✅ Production-Ready** |
-
----
-
-# Implementation Summary
-
-## 🎉 Status: COMPLETE
-
-**Date:** December 15, 2025
-**Repository:** ZdenekSrotyr/xmas-challenge-fork (fork of keboola/xmas-challenge)
-**Implementation Time:** ~4 hours with parallel agent execution
-
----
-
-## 📊 Final Statistics
-
-| Category | Files | Lines of Code | Status |
-|----------|-------|---------------|--------|
-| **keboola-core Plugin** | 3 | 2,245 | ✅ Complete |
-| **Templates & Examples** | 19 | 4,700+ | ✅ Complete |
-| **Error Reporter** | 8 | 2,128 | ✅ Complete |
-| **GitHub Actions** | 13 | 2,987+ | ✅ Complete |
-| **Metrics System** | 9 | 2,300+ | ✅ Complete |
-| **Copied Plugins** | 40+ | 10,000+ | ✅ Integrated |
-| **Documentation** | All | 15,000+ | ✅ Comprehensive |
-| **TOTAL** | **90+** | **35,000+** | **✅ Production-Ready** |
-
----
-
-## ✅ Success Criteria - All Met
-
-### 1. Complete Keboola Knowledge ✅
-
-**keboola-core Plugin** - Progressive disclosure pattern
-- Storage API, Jobs API, Custom Python deployment
-- MCP server integration guidance
-- 7 common pitfalls with solutions
-- Working code examples for all operations
-- Dual audience support (end-users + developers)
-
-**Workspace ID Confusion** - Explicitly addressed ✅
-- Comparison table showing Project ID vs Storage Backend ID vs DB Name
-- Clear guidance when to use each
-
-**Input/Output Mapping** - Fully explained ✅
-- Visual diagrams
-- Working code examples
-- Both configuration approaches shown
-
-**Business Language Translation** ✅
-- Mapping table: business terms → Keboola operations
-- Examples for non-technical users
-
-### 2. Error Reporting ✅
-
-**hooks/error-reporter.sh** - Production-ready hook
-- Automatic GitHub Issue creation
-- Rate limiting (10/hour, 50/day)
-- Deduplication (24-hour window)
-- Dry-run mode for testing
-- 1,612 lines of documentation
-
-### 3. Validation & Auto-Update Loop ✅
-
-**GitHub Actions** - Complete self-healing system
-- `auto-triage.yml` - AI-powered categorization (Claude Sonnet 4.5)
-- `validate-examples.yml` - Daily code validation
-- `propose-fix.yml` - Automatic PR generation
-- Human-in-the-loop for all changes
-- 1,779 lines of documentation
-
-**Metrics Tracking** ✅
-- Usage tracking (`track-usage.py`)
-- Error tracking (`track-errors.py`)
-- Visual dashboard (`dashboard.py`)
-- Terminal + HTML output formats
-
-### 4. Boilerplates ✅
-
-**templates/custom-python/** - Production-ready Python template
-- Complete working example (215 lines)
-- Comprehensive documentation (420 lines)
-- GitHub Actions testing (210 lines)
-
-**templates/streamlit-app/** - Full Streamlit application
-- Interactive data app (430 lines)
-- Multiple deployment options
-- Automated testing (324 lines)
-- Complete guide (496 lines)
-
-### 5. Polish Existing Work ✅
-
-**From ai-kit copied:**
-- `component-developer` - Component development workflows
-- `dataapp-developer` - Streamlit app development
-- 10,000+ lines of existing, proven code
-
----
-
-## 🏗️ Architecture Decisions
-
-### Based on 2025 Industry Research
-
-**Pattern Sources:**
-- ✅ **Anthropic Skills** - Progressive disclosure, single SKILL.md
-- ✅ **Stripe** - Plain text docs, developer experience
-- ✅ **Linear** - Clean MCP design, logical organization
-- ✅ **Bloomfire/Zendesk** - Self-healing knowledge base
-
-**Key Decisions Made:**
-
-1. **MCP vs Skills?** → Hybrid approach
-   - MCP server for real-time operations (existing keboola/mcp-server)
-   - Skills for patterns and knowledge (keboola-core plugin)
-
-2. **Boilerplates location?** → In this repo
-   - Co-located with documentation
-   - Easier consistency
-
-3. **Error reporting?** → Opt-in
-   - Hook available but not auto-installed
-   - Clear privacy documentation
-
-4. **Auto-merge threshold?** → Conservative (80% confidence)
-   - AI proposes, human always reviews
-   - Adjustable based on accuracy tracking
-
----
-
-## 💡 Key Innovations
-
-### 1. Progressive Disclosure
-Single SKILL.md with expandable `<details>` sections:
-- Quick answers: ~200 tokens
-- Full knowledge: ~1,700 lines
-- Load only what's needed
-
-### 2. Zero-Dependency Metrics
-- Pure Python stdlib (no external packages required)
-- Fast execution (<0.5s for 1000 events)
-- Multiple output formats
-
-### 3. AI-Powered Self-Healing
-- Claude Sonnet 4.5 (latest 2025 model)
-- Confidence-based workflow triggering
-- Human safety review
-
-### 4. Cost-Effective
-- **Monthly cost:** ~$0.61
-- **Time saved:** ~18 hours/month
-- **ROI:** 1,500:1
-
-### 5. Production-Ready
-- Comprehensive error handling
-- Security best practices (secrets, permissions)
-- Extensive testing and documentation
-
----
 
 ## 📁 Repository Structure
 
 ```
-xmas-challenge/
-├── README.md                        # Main documentation (updated)
-├── CHALLENGE.md                     # Original spec (preserved)
-├── IMPLEMENTATION_SUMMARY.md        # This file
+xmas-challenge-fork/
 │
-├── .claude-plugin/
-│   └── marketplace.json             # Plugin marketplace config
+├── docs/                          # 📚 SOURCE OF TRUTH - Edit here only
+│   ├── README.md
+│   └── keboola/
+│       ├── 01-core-concepts.md
+│       ├── 02-storage-api.md
+│       └── 03-common-pitfalls.md
 │
-├── plugins/
-│   ├── keboola-core/                # ✨ NEW - Core knowledge
-│   │   ├── .claude-plugin/
-│   │   │   └── plugin.json
-│   │   ├── skills/
-│   │   │   └── keboola-knowledge/
-│   │   │       └── SKILL.md         # 1,767 lines
-│   │   └── README.md                # 455 lines
+├── automation/
+│   ├── learning/                  # 🧠 Learning System
+│   │   ├── capture.py             # Capture interactions
+│   │   ├── analyzer.py            # AI gap analysis
+│   │   ├── proposer.py            # Propose doc fixes
+│   │   ├── feedback.py            # User satisfaction
+│   │   └── data/
+│   │       └── memory.db          # SQLite: interactions + learnings
 │   │
-│   ├── component-developer/         # ✨ COPIED - Polished
-│   │   ├── .claude-plugin/
-│   │   ├── agents/ (5 agents)
-│   │   ├── commands/ (2 commands)
-│   │   ├── guides/ (comprehensive)
-│   │   └── tools/ (schema-tester, playwright)
+│   ├── graph/                     # 📊 Knowledge Graph
+│   │   ├── knowledge_graph.py     # Graph database
+│   │   ├── event_handler.py       # GitHub event processor
+│   │   ├── export_docs.py         # docs/ + history → JSON
+│   │   ├── export_learnings.py    # memory.db → JSON
+│   │   └── data/
+│   │       └── graph.db           # Concepts & relationships
 │   │
-│   └── dataapp-developer/           # ✨ COPIED - Polished
-│       ├── .claude-plugin/
-│       └── skills/
-│           └── dataapp-dev/
+│   ├── web/                       # 🌐 Web UI
+│   │   ├── index.html
+│   │   ├── css/styles.css
+│   │   ├── js/
+│   │   │   ├── app.js             # Doc browser
+│   │   │   └── learning.js        # Learning dashboard
+│   │   └── data/
+│   │       ├── docs.json          # Generated from docs/
+│   │       └── learnings.json     # Generated from memory.db
+│   │
+│   └── scripts/                   # 🔧 Generators
+│       ├── claude_generator.py    # Markdown → SKILL.md
+│       └── gemini_generator.py    # Markdown → skill.yaml
 │
-├── templates/                       # ✨ NEW - Quick starts
-│   ├── README.md                    # Main guide (565 lines)
-│   ├── QUICK_REFERENCE.md           # Quick ref (407 lines)
-│   ├── GETTING_STARTED.md           # Beginner guide
-│   ├── TEMPLATE_OVERVIEW.md         # Technical overview
-│   ├── create-from-template.sh      # Interactive helper
-│   │
-│   ├── custom-python/
-│   │   ├── main.py                  # 215 lines
-│   │   ├── README.md                # 420 lines
-│   │   ├── requirements.txt
-│   │   ├── cookiecutter.json
-│   │   └── .github/workflows/
-│   │       └── test-template.yml    # 210 lines
-│   │
-│   └── streamlit-app/
-│       ├── app.py                   # 430 lines
-│       ├── README.md                # 496 lines
-│       ├── requirements.txt
-│       ├── .streamlit/
-│       │   ├── config.toml
-│       │   └── secrets.toml.example
-│       └── .github/workflows/
-│           └── test-template.yml    # 324 lines
+├── .github/workflows/
+│   ├── validate-docs.yml          # Validate documentation
+│   ├── auto-triage.yml            # AI-powered triage
+│   ├── propose-fix.yml            # Generate fix PRs
+│   ├── auto-merge.yml             # 🆕 Safe auto-merge
+│   ├── learn-from-interaction.yml # 🆕 Process learnings
+│   ├── sync-claude.yml            # docs/ → claude/
+│   ├── sync-gemini.yml            # docs/ → gemini/
+│   ├── track-issues.yml           # Track in graph
+│   ├── track-prs.yml              # Track in graph
+│   └── deploy-ui.yml              # Deploy to GitHub Pages
 │
-├── hooks/                           # ✨ NEW - Error reporting
-│   ├── error-reporter.sh            # 477 lines (main script)
-│   ├── report-keboola-error.sh      # 39 lines (wrapper)
-│   ├── README.md                    # 571 lines
-│   ├── QUICKSTART.md                # 260 lines
-│   ├── INTEGRATION.md               # 408 lines
-│   ├── CHANGELOG.md                 # 188 lines
-│   └── INDEX.md                     # 181 lines
+├── .claude/hooks/
+│   └── learning-capture.sh        # 🆕 Hook for capturing learnings
 │
-├── .github/                         # ✨ NEW - Self-healing
-│   ├── workflows/
-│   │   ├── auto-triage.yml          # 295 lines
-│   │   ├── validate-examples.yml    # 450 lines
-│   │   ├── propose-fix.yml          # 471 lines
-│   │   └── README.md                # 578 lines
-│   │
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── auto-report.yml
-│   │   └── config.yml
-│   │
-│   ├── ARCHITECTURE.md              # 628 lines
-│   ├── SETUP.md                     # 308 lines
-│   ├── QUICKREF.md                  # 265 lines
-│   └── SUMMARY.md                   # 493 lines
+├── claude/                        # 🤖 GENERATED - DO NOT EDIT
+│   ├── keboola-core/
+│   ├── component-developer/
+│   ├── dataapp-developer/
+│   └── developer/
 │
-└── scripts/
-    └── metrics/                     # ✨ NEW - Metrics tracking
-        ├── track-usage.py           # 14KB (executable)
-        ├── track-errors.py          # 19KB (executable)
-        ├── dashboard.py             # 24KB (executable)
-        ├── monitor.sh               # 2.7KB (executable)
-        ├── example-workflow.sh      # 1.4KB (executable)
-        ├── README.md                # 9.3KB
-        ├── QUICKSTART.md            # 4.1KB
-        ├── FEATURES.md              # 6.4KB
-        └── requirements.txt         # 602B (zero deps!)
+└── gemini/                        # 🤖 GENERATED - DO NOT EDIT
+    └── keboola-core/
 ```
 
----
+## 🚀 Quick Start
 
-## 🚀 Deployment Checklist
+### 1. Clone the Repository
 
-### Immediate Use (End Users)
-
-- ✅ Clone repository
-- ✅ Install plugin: `/plugin install keboola-core`
-- ✅ Start asking Keboola questions
-- ✅ Use templates for quick starts
-
-### Full Setup (Repository Maintainers)
-
-#### 1. Plugin Marketplace
 ```bash
-# Already configured in .claude-plugin/marketplace.json
-# Ready to publish to Claude Code marketplace
+git clone https://github.com/ZdenekSrotyr/xmas-challenge-fork.git
+cd xmas-challenge-fork
 ```
 
-#### 2. Error Reporting (Optional)
+### 2. View Documentation Locally
+
 ```bash
-cd hooks
-./error-reporter.sh --help
-# Test with dry-run
-./error-reporter.sh --error-message "Test" --dry-run
+cd automation/web
+python3 -m http.server 8000
+open http://localhost:8000
 ```
 
-#### 3. GitHub Actions (Recommended)
+### 3. Capture Your First Learning
+
+When using Claude Code, if you discover a knowledge gap:
+
 ```bash
-# Add API key to secrets
-gh secret set ANTHROPIC_API_KEY
-
-# Create test issue with "auto-report" label
-# Verify workflows run in Actions tab
+./.claude/hooks/learning-capture.sh \
+  "Trying to understand Storage API rate limits" \
+  "Agent didn't know about rate limits" \
+  "Helpful"
 ```
 
-#### 4. Metrics Tracking (Optional)
+Or use the manual reporting workflow (coming soon).
+
+### 4. View Learnings
+
 ```bash
-cd scripts/metrics
-./example-workflow.sh  # Test with simulated data
-# Setup cron for production: see scripts/metrics/README.md
+# Export learnings to JSON
+python3 automation/graph/export_learnings.py
+
+# View in browser
+open automation/web/index.html  # Click "Learning Dashboard" tab
 ```
 
+## 🧠 How Learning Works
+
+### 1. Capture Phase
+
+**Automatic (via hook)**:
+- Hook is called when agent encounters unknown territory
+- Interaction is stored in `memory.db`
+
+**Manual (coming soon)**:
+- Slash command: `/report-gap "what was missing"`
+- Web form on dashboard
+
+### 2. Analysis Phase
+
+AI analyzer (`analyzer.py`) examines the interaction:
+- What concept was involved? (e.g., "Storage API")
+- What type of gap? (missing_info, incorrect, outdated)
+- What should be fixed?
+
+### 3. Proposal Phase
+
+System creates a GitHub Issue with:
+- Context from real user interaction
+- Proposed documentation fix
+- Link to interaction in memory.db
+
+### 4. Self-Healing Phase
+
+Auto-triage workflow:
+- AI categorizes the issue
+- Assigns priority based on impact
+- Triggers fix generation if confidence > 80%
+
+Auto-fix workflow:
+- AI generates documentation update
+- Creates PR with changes
+- Runs validation
+
+Auto-merge workflow:
+- Checks changed files are in safe paths
+- Merges if all checks pass
+- Triggers skill regeneration
+
+### 5. Improvement Phase
+
+- `sync-claude.yml` regenerates Claude skills
+- `sync-gemini.yml` regenerates Gemini skills
+- UI is updated with new content
+- Next user gets better answer!
+
+## 📊 Auto-Merge Safety
+
+Auto-merge **only** works for changes in these safe paths:
+
+✅ **Allowed**:
+- `docs/` - Documentation updates
+- `claude/` - Generated Claude skills
+- `gemini/` - Generated Gemini skills
+- `automation/web/data/` - UI data
+- `automation/graph/data/` - Graph/memory databases
+
+❌ **Not Allowed** (requires human review):
+- `.github/workflows/` - Workflow changes
+- `automation/learning/` - Learning system code
+- `automation/scripts/` - Generator scripts
+- Anything else
+
+PRs touching forbidden paths will be labeled but not auto-merged.
+
+## 🎯 Use Cases
+
+### For Platform Documentation
+
+Keep Keboola platform documentation always up-to-date based on real developer questions.
+
+**Example:**
+1. Developer asks agent: "How do I handle rate limiting in Storage API?"
+2. Agent doesn't know (not in docs)
+3. System captures gap
+4. AI proposes: "Add rate limiting section to Storage API docs"
+5. PR is auto-generated and merged
+6. Next developer gets the answer immediately
+
+### For Product Teams
+
+Understand what users struggle with:
+- Dashboard shows most common gaps
+- Identifies confusing documentation
+- Tracks improvement over time (user satisfaction trends)
+
+### For AI Researchers
+
+Study how AI agents learn:
+- What types of knowledge gaps occur?
+- How quickly does self-healing improve performance?
+- What's the quality of AI-generated documentation fixes?
+
+## 🛠️ Development
+
+### Run Tests
+
+```bash
+# Test learning capture
+cd automation/learning
+python3 capture.py --context "test" --response "test" --feedback "5/5"
+
+# Test gap analysis
+python3 analyzer.py --interaction-id 1
+
+# Test proposer
+python3 proposer.py
+```
+
+### Generate Skills Locally
+
+```bash
+# Generate Claude skills
+python3 automation/scripts/claude_generator.py \
+  --input docs/keboola/ \
+  --output claude/keboola-core/SKILL.md
+
+# Generate Gemini skills
+python3 automation/scripts/gemini_generator.py \
+  --input docs/keboola/ \
+  --output gemini/keboola-core/skill.yaml
+```
+
+### Export Data for UI
+
+```bash
+# Export documentation + git history
+python3 automation/graph/export_docs.py
+
+# Export learnings
+python3 automation/graph/export_learnings.py
+```
+
+## 📝 Contributing
+
+### Editing Documentation
+
+**✅ DO**: Edit files in `docs/`
+```bash
+vim docs/keboola/02-storage-api.md
+git commit -m "docs: Add rate limiting section"
+```
+
+**❌ DON'T**: Edit generated skills directly
+```bash
+vim claude/keboola-core/SKILL.md  # Will be overwritten!
+```
+
+### Reporting Issues
+
+Found a knowledge gap? Create an issue:
+
+```bash
+gh issue create \
+  --title "Missing: Storage API rate limits" \
+  --body "When asking about rate limits, agent couldn't help" \
+  --label "auto-report"
+```
+
+The system will auto-triage and propose a fix!
+
+## 🔐 Security
+
+- **No secrets in code**: API keys go in GitHub Secrets
+- **Safe auto-merge**: Only documented safe paths
+- **Human review**: Critical changes require approval
+- **Audit trail**: All learnings stored with context
+- **Privacy**: No PII captured in interactions
+
+## 📈 Metrics
+
+View real-time metrics on the dashboard:
+- **Total Interactions**: How many times agents were used
+- **Gaps Identified**: Knowledge gaps found
+- **Auto-Fixed**: Issues resolved automatically
+- **Avg Satisfaction**: User ratings (1-5 stars)
+- **Time to Fix**: Gap identified → PR merged
+
+## 🗺️ Roadmap
+
+- [x] Learning capture system
+- [x] AI gap analysis
+- [x] Auto-triage workflow
+- [x] Auto-merge for safe paths
+- [x] Learning dashboard UI
+- [ ] Slash command for manual reporting
+- [ ] Embeddings for semantic gap detection
+- [ ] A/B testing: old docs vs new docs
+- [ ] Integration with Zep for better memory
+- [ ] Support for more LLMs (OpenAI, Mistral, etc.)
+
+## 📚 Documentation
+
+- **[Workflows Guide](.github/WORKFLOWS.md)**: Complete workflow documentation
+- **[Learning System](automation/learning/README.md)**: Technical details
+- **[Live Dashboard](https://zdeneksrotyr.github.io/xmas-challenge-fork/)**: Browse docs and learnings
+
+## 💬 FAQ
+
+**Q: Will it auto-merge bad changes?**
+A: No. Auto-merge only works for documentation in safe paths, and all changes go through validation. Critical code requires human review.
+
+**Q: What if the AI proposes incorrect fixes?**
+A: You can reject PRs, and the system learns from rejections (coming soon). Also, human review is always available.
+
+**Q: Does it capture private data?**
+A: No. Only the context necessary for improvement is captured. No PII, no secrets.
+
+**Q: Can I use this for my own product?**
+A: Yes! Fork the repo and adapt `docs/` to your domain. The learning system is generic.
+
+## 🙏 Acknowledgments
+
+Built with:
+- [Claude Code](https://claude.com/claude-code) - AI coding assistant
+- [Claude API](https://www.anthropic.com/api) - AI-powered analysis
+- [GitHub Actions](https://github.com/features/actions) - Automation
+- [SQLite](https://www.sqlite.org/) - Lightweight database
+
+Inspired by:
+- [Zep](https://www.getzep.com/) - Long-term memory for AI agents
+- Self-healing systems in SRE
+- Documentation-as-code practices
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
 ---
 
-## 📈 Expected Outcomes
+**Made with ❤️ by developers who hate outdated docs**
 
-### Month 1 (Learning Phase)
-- Users start using keboola-core plugin
-- 10-20 error reports via hook
-- 5-10 auto-triaged issues
-- 2-3 PRs generated
-- Accuracy: ~60-70%
-
-### Month 3 (Stabilization)
-- 50+ users actively using plugin
-- 30-40 error reports
-- 25-30 auto-triaged (80%+ accuracy)
-- 10-15 PRs generated
-- 8-12 PRs merged (70%+ merge rate)
-- Knowledge base improving
-
-### Month 6 (Maturity)
-- 100+ users
-- Error rate decreasing (fewer duplicate issues)
-- 85%+ triage accuracy
-- 75%+ PR merge rate
-- 20+ hours/month time saved
-- Self-healing loop fully operational
-
----
-
-## 🎯 Success Metrics Dashboard
-
-Monitor these KPIs in `scripts/metrics/dashboard.py`:
-
-| Metric | Target | Month 1 | Month 3 | Month 6 |
-|--------|--------|---------|---------|---------|
-| Triage Accuracy | 80%+ | 65% | 82% | 87% |
-| High-Conf Rate | 50%+ | 40% | 55% | 62% |
-| PR Merge Rate | 70%+ | 60% | 72% | 78% |
-| Time Saved | 15+ hrs | 8 hrs | 18 hrs | 25 hrs |
-| Issue Reduction | Down | Baseline | -20% | -40% |
-
----
-
-## 🔄 Maintenance Plan
-
-### Weekly
-- Review new error reports
-- Check auto-triage accuracy
-- Merge approved PRs
-
-### Monthly
-- Run metrics dashboard
-- Review KPIs vs targets
-- Adjust confidence thresholds if needed
-- Update SKILL.md with learnings
-
-### Quarterly
-- Review plugin usage stats
-- Gather user feedback
-- Plan feature improvements
-- Update templates with new patterns
-
----
-
-## 🐛 Known Limitations
-
-1. **First-Run Accuracy:** AI triage starts at ~60-70%, improves to 80%+ over time
-2. **API Rate Limits:** GitHub API and Anthropic API have rate limits
-3. **Context Size:** Very long error messages may be truncated
-4. **Manual Review Required:** All PRs require human approval (by design)
-5. **Metrics Require Setup:** Need to configure log collection for production metrics
-
----
-
-## 🚀 Future Enhancements
-
-### Phase 2 (Next 3 months)
-- [ ] Real-time metrics dashboard (web interface)
-- [ ] Slack/Discord integration for notifications
-- [ ] Auto-update from official Keboola docs
-- [ ] Community contribution system
-- [ ] A/B testing for different prompts
-
-### Phase 3 (6-12 months)
-- [ ] Multi-language support (Czech, German, etc.)
-- [ ] Video tutorials generation
-- [ ] Interactive examples in docs
-- [ ] AI-powered question answering
-- [ ] Integration with Keboola UI
-
----
-
-## 🏆 Challenge Completion
-
-### Original Requirements vs Delivered
-
-| Requirement | Status | Implementation |
-|-------------|--------|----------------|
-| Complete Keboola knowledge | ✅ | keboola-core plugin (2,245 lines) |
-| End-user support | ✅ | Business language mapping, clear docs |
-| Developer support | ✅ | Working code, API patterns, MCP guide |
-| Component development | ✅ | component-developer plugin (copied) |
-| Data app development | ✅ | dataapp-developer plugin (copied) |
-| Boilerplates | ✅ | 2 production-ready templates |
-| Error reporting | ✅ | Auto GitHub Issues (2,128 lines) |
-| AI triage | ✅ | Claude Sonnet 4.5 powered |
-| Auto PR generation | ✅ | Confidence-based workflow |
-| Validation | ✅ | Daily code example checks |
-| Self-healing loop | ✅ | Complete report→triage→fix→merge |
-| Metrics tracking | ✅ | Full dashboard system (2,300+ lines) |
-| Documentation | ✅ | 15,000+ lines comprehensive |
-
-**Total:** 13/13 requirements met (100%)
-
----
-
-## 💰 Cost-Benefit Analysis
-
-### Implementation Cost
-- Development time: ~4 hours (with parallel agents)
-- Infrastructure: $0/month (GitHub Actions free tier)
-- API costs: ~$0.61/month (Anthropic API)
-
-### Benefits (Monthly)
-- Developer time saved: ~18 hours
-- Value at $50/hr: $900/month
-- Fewer duplicate issues: -30 hours/month team time
-- Faster onboarding: -10 hours/month for new devs
-
-**ROI:** 1,500:1 (payback in < 1 day)
-
----
-
-## 🎁 Deliverables Summary
-
-### Code & Configuration
-- ✅ 90+ files
-- ✅ 35,000+ lines of code and documentation
-- ✅ 3 major plugins (1 new, 2 polished)
-- ✅ 2 production-ready templates
-- ✅ Complete self-healing infrastructure
-- ✅ Comprehensive metrics system
-
-### Documentation
-- ✅ 15,000+ lines of docs
-- ✅ Multiple entry points (beginner to expert)
-- ✅ Architecture guides
-- ✅ Quick references
-- ✅ Troubleshooting guides
-
-### Automation
-- ✅ 3 GitHub Actions workflows
-- ✅ Error reporter hook
-- ✅ Metrics tracking scripts
-- ✅ Template generator
-- ✅ Monitoring scripts
-
----
-
-## 👥 Team Contribution
-
-Built using parallel agent execution:
-- **Agent 1:** Error reporter hook (2,128 lines)
-- **Agent 2:** GitHub Actions workflows (2,987 lines)
-- **Agent 3:** keboola-core plugin (2,245 lines)
-- **Agent 4:** Templates system (4,700 lines)
-- **Agent 5:** Metrics tracking (2,300 lines)
-
-**Total agent time:** ~4 hours
-**Total value delivered:** $900/month ongoing
-
----
-
-## 📞 Next Steps
-
-### For End Users
-1. Install plugin: `/plugin install keboola-core`
-2. Try asking: "How do I read a table from Keboola Storage?"
-3. Use templates: `cd templates && ./create-from-template.sh`
-
-### For Maintainers
-1. Review `.github/SETUP.md` for deployment
-2. Add `ANTHROPIC_API_KEY` to GitHub secrets
-3. Create test issue to verify self-healing loop
-4. Setup metrics: `cd scripts/metrics && ./monitor.sh`
-
-### For Contributors
-1. Read `CONTRIBUTING.md` (to be created)
-2. Try templates and report issues
-3. Suggest improvements to SKILL.md
-4. Add more code examples
-
----
-
-## 🎊 Mission Complete
-
-**Original challenge goal:**
-> "When I ask Claude Code for anything Keboola-related, I have to scout documentation and watch over Claude to make sure it knows what it's doing. That's backwards - I need Claude Code to be smarter than me."
-
-**Solution delivered:**
-- Claude Code is now a Keboola expert
-- Comprehensive knowledge of all Keboola concepts
-- Self-healing when gaps are found
-- Continuous improvement from real usage
-- Production-ready and well-documented
-
-**Status:** 🎉 **COMPLETE & READY TO USE**
-
----
-
-Built with ❤️ using modern 2025 AI patterns from Anthropic, Stripe, Linear, Bloomfire, and Zendesk.
-
-**Ready for the 3 Michelin vouchers! 🍽️**
+*Last updated: 2025-12-16*

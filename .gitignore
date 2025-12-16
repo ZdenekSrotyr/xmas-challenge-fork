@@ -57,6 +57,12 @@ automation/scripts/metrics/**/*.html
 automation/scripts/metrics/**/*.json
 automation/scripts/metrics/**/*.csv
 
+# Learning system database
+automation/learning/data/*.db
+automation/learning/data/*.db-journal
+automation/learning/data/*.db-wal
+automation/learning/cache/
+
 # Logs
 *.log
 logs/

@@ -42,6 +42,11 @@ jobs:
           cd automation/graph
           python export_docs.py --docs ../../docs/keboola --output ../web/data/docs.json
 
+      - name: Export learnings data
+        run: |
+          cd automation/graph
+          python export_learnings.py
+
       - name: Collect deployment stats
         id: stats
         run: |

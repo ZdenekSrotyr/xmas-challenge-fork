@@ -1,8 +1,11 @@
 // Documentation Browser - Main Application
 
+import { initLearningDashboard } from './learning.js';
+
 // Global state
 let docsData = null;
 let currentDoc = null;
+let learningInitialized = false;
 
 // Initialize the application
 async function initApp() {
@@ -20,6 +23,9 @@ async function initApp() {
         renderDocsList(docsData.docs);
         renderStatistics(docsData.statistics);
         renderRecentChanges(docsData.recent_changes);
+
+        // Setup tab switching
+        setupTabs();
 
         // Hide loading overlay
         hideLoading();
@@ -310,6 +316,32 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initApp);
 } else {
     initApp();
+}
+
+// Setup tab switching
+function setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const tabName = button.dataset.tab;
+
+            // Update button states
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            // Update content visibility
+            tabContents.forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabName}-view`).classList.add('active');
+
+            // Lazy load learning dashboard
+            if (tabName === 'learning' && !learningInitialized) {
+                initLearningDashboard();
+                learningInitialized = true;
+            }
+        });
+    });
 }
 
 // Retry button handler
