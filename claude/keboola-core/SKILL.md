@@ -1,9 +1,10 @@
 # Keboola Platform Knowledge for Claude Code
 
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
-> Source: `docs/keboola/`
+> Source: `docs/keboola/` + Custom Python Components section
 > Generator: `scripts/generators/claude_generator.py`
 > Generated: 2025-12-16T09:47:57.473968
+> Updated: 2025-12-16 (Added Custom Python Components)
 
 ---
 
@@ -17,6 +18,9 @@ including API usage, best practices, and common pitfalls.
 - User needs help with Keboola Jobs API
 - User asks about regional stacks or Stack URLs
 - User encounters Keboola-related errors
+- User wants to create Custom Python components or transformations
+- User asks about deploying Python code to Keboola
+- User needs help with keboola.component library
 
 ---
 
@@ -368,3 +372,389 @@ def safe_api_call(url, headers):
 ---
 
 **End of Skill**
+
+---
+
+<!-- Source: 04-custom-python-components.md -->
+
+# Custom Python Components
+
+## Overview
+
+For production deployments, use the **Custom Python Component** framework instead of direct API calls. This approach provides:
+- Standardized input/output handling
+- Automatic manifest file processing
+- Built-in state management
+- Docker containerization
+- Integration with Keboola Developer Portal
+
+## Component Structure
+
+### Directory Layout
+
+```
+my-component/
+├── src/
+│   └── component.py          # Main component code
+├── tests/
+│   └── test_component.py
+├── Dockerfile
+├── component_config/
+│   └── component.json        # Configuration schema
+└── data/                     # Local testing data
+    ├── in/
+    │   └── tables/
+    │       └── source.csv
+    └── out/
+        └── tables/
+            └── result.csv
+```
+
+### Basic Component Code
+
+```python
+# src/component.py
+from keboola.component.base import ComponentBase, sync_action
+from keboola.component.exceptions import UserException
+import csv
+
+class Component(ComponentBase):
+    """
+    Custom Python component that processes data from Storage.
+    """
+
+    def run(self):
+        """Main execution method."""
+        # Get parameters from configuration
+        params = self.configuration.parameters
+        multiply_by = params.get('multiply_by', 1)
+
+        # Access input tables
+        input_tables = self.get_input_tables_definitions()
+        if not input_tables:
+            raise UserException("No input tables provided")
+
+        # Process first input table
+        input_table = input_tables[0]
+        output_table = self.create_out_table_definition(
+            'result.csv',
+            primary_key=['id']
+        )
+
+        # Read and process data
+        with open(input_table.full_path, 'r') as infile, \
+             open(output_table.full_path, 'w', newline='') as outfile:
+
+            reader = csv.DictReader(infile)
+            fieldnames = reader.fieldnames
+
+            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for row in reader:
+                # Process row
+                if 'value' in row:
+                    row['value'] = str(int(row['value']) * multiply_by)
+                writer.writerow(row)
+
+        # Write manifest (handles metadata)
+        self.write_manifests()
+
+        self.logger.info("Processing complete")
+
+
+if __name__ == "__main__":
+    try:
+        comp = Component()
+        comp.run()
+    except UserException as e:
+        comp.logger.error(str(e))
+        exit(1)
+    except Exception as e:
+        comp.logger.exception(str(e))
+        exit(2)
+```
+
+### Configuration Schema
+
+```json
+{
+  "type": "object",
+  "title": "Parameters",
+  "required": ["multiply_by"],
+  "properties": {
+    "multiply_by": {
+      "type": "integer",
+      "title": "Multiply By",
+      "description": "Factor to multiply values by",
+      "default": 1
+    }
+  }
+}
+```
+
+### Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /code
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy component code
+COPY src/ /code/src/
+
+CMD ["python", "-u", "/code/src/component.py"]
+```
+
+### requirements.txt
+
+```
+keboola.component>=1.6.0
+```
+
+## Local Development
+
+### Setup Data Folder
+
+```bash
+mkdir -p data/in/tables data/out/tables
+```
+
+### Create config.json
+
+```json
+{
+  "parameters": {
+    "multiply_by": 10
+  },
+  "storage": {
+    "input": {
+      "tables": [
+        {
+          "source": "in.c-main.source",
+          "destination": "source.csv"
+        }
+      ]
+    },
+    "output": {
+      "tables": [
+        {
+          "source": "result.csv",
+          "destination": "in.c-main.result"
+        }
+      ]
+    }
+  }
+}
+```
+
+### Run Locally
+
+```bash
+# Using Docker
+docker build -t my-component .
+docker run --rm \
+  -v $(pwd)/data:/data \
+  -e KBC_DATADIR=/data \
+  my-component
+
+# Or directly with Python
+export KBC_DATADIR=./data
+python src/component.py
+```
+
+## Input/Output Mapping
+
+### Reading Input Tables
+
+```python
+# Get all input tables
+input_tables = self.get_input_tables_definitions()
+
+for table in input_tables:
+    print(f"Table: {table.name}")
+    print(f"Path: {table.full_path}")
+    print(f"Columns: {table.columns}")
+
+    # Read CSV data
+    with open(table.full_path, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Process row
+            pass
+```
+
+### Writing Output Tables
+
+```python
+# Create output table definition
+output_table = self.create_out_table_definition(
+    'output.csv',
+    primary_key=['id'],
+    incremental=False,
+    delete_where=None
+)
+
+# Write data
+with open(output_table.full_path, 'w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=['id', 'value'])
+    writer.writeheader()
+    writer.writerow({'id': '1', 'value': '100'})
+
+# Write manifest (required!)
+self.write_manifests()
+```
+
+## State Management
+
+### Reading Previous State
+
+```python
+def run(self):
+    # Get state from previous run
+    state = self.get_state_file()
+    last_processed = state.get('last_id', 0)
+
+    self.logger.info(f"Last processed ID: {last_processed}")
+
+    # Process only new records
+    # ...
+
+    # Save new state
+    self.write_state_file({
+        'last_id': new_last_id,
+        'processed_at': datetime.now().isoformat()
+    })
+```
+
+## Deployment to Keboola
+
+### 1. Create GitHub Repository
+
+```bash
+gh repo create my-component --public
+git init
+git add .
+git commit -m "Initial component"
+git push -u origin main
+```
+
+### 2. Register in Developer Portal
+
+Use the Developer Portal API or UI:
+
+```python
+import requests
+
+vendor_token = os.environ['KEBOOLA_VENDOR_TOKEN']
+
+response = requests.post(
+    'https://connection.keboola.com/v2/storage/dev-branches',
+    headers={'X-StorageApi-Token': vendor_token},
+    json={
+        'name': 'my-component',
+        'type': 'python',
+        'repository': 'https://github.com/username/my-component',
+        'tag': 'main'
+    }
+)
+```
+
+### 3. Configure CI/CD
+
+Add GitHub Actions for automatic deployment:
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy Component
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build and Push
+        run: |
+          docker build -t my-component:${{ github.ref_name }} .
+          docker push my-component:${{ github.ref_name }}
+```
+
+## Best Practices
+
+### Error Handling
+
+```python
+from keboola.component.exceptions import UserException
+
+# User errors (configuration, data issues)
+if not params.get('required_field'):
+    raise UserException("Missing required parameter: required_field")
+
+# System errors (let them bubble up)
+try:
+    result = api_call()
+except Exception as e:
+    # This will be caught by the framework
+    raise
+```
+
+### Logging
+
+```python
+# Use component logger
+self.logger.info("Processing started")
+self.logger.warning("Missing optional field")
+self.logger.error("Failed to process row", extra={'row_id': row_id})
+```
+
+### CSV Processing
+
+```python
+import csv
+
+# Always use csv module, not pandas (for memory efficiency)
+with open(input_path, 'r') as infile:
+    reader = csv.DictReader(infile)
+
+    # Process in chunks for large files
+    chunk = []
+    for row in reader:
+        chunk.append(row)
+        if len(chunk) >= 10000:
+            process_chunk(chunk)
+            chunk = []
+
+    # Process remaining
+    if chunk:
+        process_chunk(chunk)
+```
+
+## When to Use Components vs Direct API
+
+### Use Custom Python Components when:
+- Building production workflows
+- Need scheduled/orchestrated runs
+- Want version control and CI/CD
+- Sharing with team/organization
+- Need state management
+
+### Use Direct Storage API when:
+- One-off scripts
+- External systems integration
+- Quick data exploration
+- Not running within Keboola infrastructure
+
+## Additional Resources
+
+- **Component Developer Documentation**: See `claude/component-developer/` for detailed guides
+- **Cookiecutter Template**: `gh:keboola/cookiecutter-python-component`
+- **Example Components**: https://github.com/keboola/component-examples
+- **Developer Portal**: https://components.keboola.com
