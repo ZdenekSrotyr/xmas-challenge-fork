@@ -18,8 +18,13 @@ Keboola Storage is where your data lives. It consists of:
 ### Components
 Components are the building blocks:
 - **Extractors**: Pull data from external sources
-- **Transformations**: Process and modify data
+- **Transformations**: Process and modify data (SQL, Python, R)
 - **Writers**: Send data to external destinations
+- **Custom Components**: User-built components deployed via Developer Portal
+
+Components can be used in two ways:
+1. **Pre-built components**: Available in Keboola Component Library
+2. **Custom components**: Your own Python/R code packaged as Docker containers
 
 ## Authentication
 

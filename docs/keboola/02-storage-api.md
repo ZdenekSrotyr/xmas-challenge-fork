@@ -130,3 +130,20 @@ response = requests.get(
     params={"changedSince": yesterday}
 )
 ```
+
+
+## When to Use Direct API vs Components
+
+### Use Storage API Directly When:
+- Building external integrations outside Keboola
+- Prototyping and experimenting
+- One-off data operations
+- You need full control over API calls
+
+### Use Custom Components When:
+- Building reusable transformations
+- Need to share logic across projects
+- Want automatic I/O mapping and error handling
+- Deploying production workflows
+
+See **Custom Python Components** documentation for component development patterns.

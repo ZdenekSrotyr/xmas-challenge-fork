@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T04:43:42.602477'
+  generated_at: '2025-12-16T14:00:14.169545'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -15,15 +15,18 @@ knowledge_base:
     \ Storage\nKeboola Storage is where your data lives. It consists of:\n- **Buckets**:\
     \ Logical containers for tables\n- **Tables**: The actual data\n- **Files**: Temporary\
     \ file storage\n\n### Components\nComponents are the building blocks:\n- **Extractors**:\
-    \ Pull data from external sources\n- **Transformations**: Process and modify data\n\
-    - **Writers**: Send data to external destinations\n\n## Authentication\n\nUse\
-    \ Storage API tokens for authentication:\n\n```python\nimport os\nimport requests\n\
-    \nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"\
-    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\nheaders = {\n    \"X-StorageApi-Token\"\
-    : STORAGE_TOKEN,\n    \"Content-Type\": \"application/json\"\n}\n\nresponse =\
-    \ requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\",\n    headers=headers\n\
-    )\n```\n\n## Regional Stacks\n\nKeboola operates multiple regional stacks:\n-\
-    \ **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
+    \ Pull data from external sources\n- **Transformations**: Process and modify data\
+    \ (SQL, Python, R)\n- **Writers**: Send data to external destinations\n- **Custom\
+    \ Components**: User-built components deployed via Developer Portal\n\nComponents\
+    \ can be used in two ways:\n1. **Pre-built components**: Available in Keboola\
+    \ Component Library\n2. **Custom components**: Your own Python/R code packaged\
+    \ as Docker containers\n\n## Authentication\n\nUse Storage API tokens for authentication:\n\
+    \n```python\nimport os\nimport requests\n\nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"\
+    ]\nSTACK_URL = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
+    )\n\nheaders = {\n    \"X-StorageApi-Token\": STORAGE_TOKEN,\n    \"Content-Type\"\
+    : \"application/json\"\n}\n\nresponse = requests.get(\n    f\"https://{STACK_URL}/v2/storage/tables\"\
+    ,\n    headers=headers\n)\n```\n\n## Regional Stacks\n\nKeboola operates multiple\
+    \ regional stacks:\n- **US**: connection.keboola.com\n- **EU**: connection.eu-central-1.keboola.com\n\
     - **Azure**: connection.north-europe.azure.keboola.com\n\nAlways use your project's\
     \ stack URL, not a hardcoded one.\n"
   format: markdown
@@ -64,7 +67,13 @@ knowledge_base:
     \n# Get data changed in last 24 hours\nyesterday = (datetime.now() - timedelta(days=1)).isoformat()\n\
     \nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\"changedSince\"\
-    : yesterday}\n)\n```\n"
+    : yesterday}\n)\n```\n\n\n## When to Use Direct API vs Components\n\n### Use Storage\
+    \ API Directly When:\n- Building external integrations outside Keboola\n- Prototyping\
+    \ and experimenting\n- One-off data operations\n- You need full control over API\
+    \ calls\n\n### Use Custom Components When:\n- Building reusable transformations\n\
+    - Need to share logic across projects\n- Want automatic I/O mapping and error\
+    \ handling\n- Deploying production workflows\n\nSee **Custom Python Components**\
+    \ documentation for component development patterns.\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\

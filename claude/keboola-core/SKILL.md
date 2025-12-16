@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T09:47:57.473968
+> Generated: 2025-12-16T14:00:14.125409
 
 ---
 
@@ -42,8 +42,13 @@ Keboola Storage is where your data lives. It consists of:
 ### Components
 Components are the building blocks:
 - **Extractors**: Pull data from external sources
-- **Transformations**: Process and modify data
+- **Transformations**: Process and modify data (SQL, Python, R)
 - **Writers**: Send data to external destinations
+- **Custom Components**: User-built components deployed via Developer Portal
+
+Components can be used in two ways:
+1. **Pre-built components**: Available in Keboola Component Library
+2. **Custom components**: Your own Python/R code packaged as Docker containers
 
 ## Authentication
 
@@ -215,6 +220,23 @@ response = requests.get(
 ```
 
 
+## When to Use Direct API vs Components
+
+### Use Storage API Directly When:
+- Building external integrations outside Keboola
+- Prototyping and experimenting
+- One-off data operations
+- You need full control over API calls
+
+### Use Custom Components When:
+- Building reusable transformations
+- Need to share logic across projects
+- Want automatic I/O mapping and error handling
+- Deploying production workflows
+
+See **Custom Python Components** documentation for component development patterns.
+
+
 ---
 
 <!-- Source: 03-common-pitfalls.md -->
@@ -359,7 +381,7 @@ def safe_api_call(url, headers):
 
 ```json
 {
-  "generated_at": "2025-12-16T09:47:57.473968",
+  "generated_at": "2025-12-16T14:00:14.125409",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
