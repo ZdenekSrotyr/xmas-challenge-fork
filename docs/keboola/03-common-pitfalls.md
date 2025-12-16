@@ -329,3 +329,42 @@ else:
 - `Table 'in.c-main.customers' does not exist` (in workspace) → Use quoted, qualified name
 - `Invalid table ID` (in Storage API) → Remove quotes and project ID
 - `SQL compilation error` (in workspace) → Missing quotes or project ID
+
+
+
+## 9. Not Checking Response Body for Error Details
+
+**Problem**: Only checking HTTP status code without reading error message
+
+**Solution**: Always parse response body for detailed error information:
+
+```python
+# ❌ WRONG - Generic error handling
+try:
+    response = requests.post(url, headers=headers)
+    response.raise_for_status()
+except requests.exceptions.HTTPError:
+    print("Request failed")  # No details!
+
+# ✅ CORRECT - Detailed error handling
+try:
+    response = requests.post(url, headers=headers)
+    response.raise_for_status()
+except requests.exceptions.HTTPError as e:
+    error_data = e.response.json()
+    error_code = error_data.get('code', 'unknown')
+    error_msg = error_data.get('error', str(e))
+    exception_id = error_data.get('exceptionId', 'N/A')
+    
+    print(f"API Error: {error_msg}")
+    print(f"Error Code: {error_code}")
+    print(f"Exception ID: {exception_id}")
+    
+    # Handle specific error codes
+    if error_code == 'storage.tables.primaryKeyRequired':
+        print("Hint: Set primary key before using incremental loads")
+    elif error_code == 'storage.tables.notFound':
+        print("Hint: Check table ID format (stage.c-bucket.table)")
+```
+
+**Why**: The response body contains detailed error codes, messages, and context that help diagnose issues. HTTP status codes alone are too generic.

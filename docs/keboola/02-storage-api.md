@@ -451,3 +451,297 @@ response = requests.get(
     headers={"X-StorageApi-Token": storage_token}
 )
 ```
+
+
+## Error Codes Reference
+
+The Storage API returns standard HTTP status codes along with detailed error messages in the response body.
+
+### Common HTTP Status Codes
+
+| Status Code | Meaning | Common Causes |
+|-------------|---------|---------------|
+| **200** | Success | Request completed successfully |
+| **201** | Created | Resource created successfully |
+| **202** | Accepted | Async job initiated successfully |
+| **400** | Bad Request | Invalid parameters, malformed request |
+| **401** | Unauthorized | Invalid or missing API token |
+| **403** | Forbidden | Valid token but insufficient permissions |
+| **404** | Not Found | Table, bucket, or resource doesn't exist |
+| **405** | Method Not Allowed | Wrong HTTP method (e.g., GET instead of POST) |
+| **422** | Unprocessable Entity | Valid request but business logic error |
+| **429** | Too Many Requests | Rate limit exceeded |
+| **500** | Internal Server Error | Server-side error |
+| **503** | Service Unavailable | Temporary service disruption |
+
+### Error Response Format
+
+All error responses follow this structure:
+
+```json
+{
+  "status": "error",
+  "error": "Error message",
+  "code": "storage.tables.notFound",
+  "exceptionId": "unique-error-id",
+  "context": {
+    "tableId": "in.c-main.customers"
+  }
+}
+```
+
+### Common Error Codes
+
+#### Authentication Errors
+
+**401 - Invalid Token**
+```json
+{
+  "error": "Invalid access token",
+  "code": "storage.tokenInvalid"
+}
+```
+**Solution**: Check that `X-StorageApi-Token` header contains valid token.
+
+**403 - Insufficient Permissions**
+```json
+{
+  "error": "You don't have access to this resource",
+  "code": "storage.accessDenied"
+}
+```
+**Solution**: Token lacks required permissions. Use token with appropriate scope.
+
+#### Resource Errors
+
+**404 - Table Not Found**
+```json
+{
+  "error": "Table in.c-main.customers not found",
+  "code": "storage.tables.notFound"
+}
+```
+**Solution**: Verify table ID format and existence. List tables to confirm.
+
+**404 - Bucket Not Found**
+```json
+{
+  "error": "Bucket in.c-main not found",
+  "code": "storage.buckets.notFound"
+}
+```
+**Solution**: Create bucket first or verify bucket ID.
+
+**409 - Resource Already Exists**
+```json
+{
+  "error": "Table in.c-main.customers already exists",
+  "code": "storage.tables.alreadyExists"
+}
+```
+**Solution**: Use import endpoint for existing tables, or delete existing table first.
+
+#### Request Errors
+
+**400 - Invalid Parameters**
+```json
+{
+  "error": "Invalid parameter: primaryKey must be an array",
+  "code": "storage.validation.invalidInput"
+}
+```
+**Solution**: Check API documentation for correct parameter format.
+
+**400 - Invalid Table ID Format**
+```json
+{
+  "error": "Invalid table ID format",
+  "code": "storage.tables.invalidId"
+}
+```
+**Solution**: Use format `stage.c-bucket.table` (e.g., `in.c-main.customers`).
+
+**405 - Method Not Allowed**
+```json
+{
+  "error": "Method not allowed",
+  "code": "storage.methodNotAllowed"
+}
+```
+**Solution**: Use POST for `/export-async` and `/import-async` endpoints, not GET.
+
+**422 - Primary Key Required**
+```json
+{
+  "error": "Primary key must be set for incremental loads",
+  "code": "storage.tables.primaryKeyRequired"
+}
+```
+**Solution**: Set primary key before using `incremental: "1"` parameter.
+
+**422 - Invalid CSV Data**
+```json
+{
+  "error": "CSV parse error: Invalid row format",
+  "code": "storage.tables.invalidCsvData"
+}
+```
+**Solution**: Validate CSV format, check for proper escaping and encoding.
+
+#### Rate Limiting
+
+**429 - Rate Limit Exceeded**
+```json
+{
+  "error": "Rate limit exceeded",
+  "code": "storage.rateLimitExceeded",
+  "retryAfter": 60
+}
+```
+**Solution**: Implement exponential backoff. Respect `retryAfter` value.
+
+#### Job Errors
+
+**Job Status: error**
+```json
+{
+  "status": "error",
+  "error": {
+    "message": "Table load failed: Invalid data format",
+    "code": "storage.jobs.loadFailed"
+  }
+}
+```
+**Solution**: Check job details for specific error. Validate input data.
+
+**Job Status: terminated**
+```json
+{
+  "status": "terminated",
+  "error": {
+    "message": "Job terminated due to timeout",
+    "code": "storage.jobs.timeout"
+  }
+}
+```
+**Solution**: Split large operations into smaller chunks.
+
+### Error Handling Best Practices
+
+```python
+import requests
+import time
+
+def safe_api_call(url, headers, method='get', **kwargs):
+    """Make API call with comprehensive error handling."""
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.request(method, url, headers=headers, **kwargs)
+            
+            # Handle specific status codes
+            if response.status_code == 401:
+                raise ValueError("Invalid API token. Check KEBOOLA_TOKEN environment variable.")
+            
+            elif response.status_code == 403:
+                raise ValueError("Insufficient permissions. Token lacks required scope.")
+            
+            elif response.status_code == 404:
+                error_data = response.json()
+                raise ValueError(f"Resource not found: {error_data.get('error', 'Unknown')}")
+            
+            elif response.status_code == 405:
+                raise ValueError(f"Wrong HTTP method. Endpoint may require POST instead of {method.upper()}.")
+            
+            elif response.status_code == 422:
+                error_data = response.json()
+                raise ValueError(f"Request validation failed: {error_data.get('error', 'Unknown')}")
+            
+            elif response.status_code == 429:
+                # Rate limited - retry with backoff
+                retry_after = int(response.headers.get('Retry-After', retry_delay * (2 ** attempt)))
+                print(f"Rate limited. Retrying after {retry_after}s...")
+                time.sleep(retry_after)
+                continue
+            
+            elif response.status_code >= 500:
+                # Server error - retry
+                if attempt < max_retries - 1:
+                    print(f"Server error. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                raise Exception(f"Server error: {response.status_code}")
+            
+            # Raise for any other error status
+            response.raise_for_status()
+            
+            return response.json()
+            
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                print(f"Request timeout. Retrying...")
+                time.sleep(retry_delay)
+                continue
+            raise TimeoutError("API request timed out after multiple retries")
+        
+        except requests.exceptions.ConnectionError:
+            if attempt < max_retries - 1:
+                print(f"Connection error. Retrying...")
+                time.sleep(retry_delay)
+                continue
+            raise ConnectionError("Failed to connect to Keboola API")
+    
+    raise Exception("Max retries exceeded")
+
+# Usage example
+try:
+    result = safe_api_call(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token},
+        method='post',
+        timeout=30
+    )
+    print(f"Job started: {result['id']}")
+except ValueError as e:
+    print(f"User error: {e}")
+except Exception as e:
+    print(f"System error: {e}")
+```
+
+### Debugging Errors
+
+**Always check the response body for detailed error information:**
+
+```python
+try:
+    response = requests.post(url, headers=headers)
+    response.raise_for_status()
+except requests.exceptions.HTTPError as e:
+    # Print full error details
+    print(f"Status: {e.response.status_code}")
+    print(f"Error body: {e.response.text}")
+    
+    # Parse error details if JSON
+    try:
+        error_data = e.response.json()
+        print(f"Error code: {error_data.get('code')}")
+        print(f"Error message: {error_data.get('error')}")
+        print(f"Exception ID: {error_data.get('exceptionId')}")
+    except:
+        pass
+```
+
+**Enable request logging for debugging:**
+
+```python
+import logging
+import http.client as http_client
+
+# Enable debug logging
+http_client.HTTPConnection.debuglevel = 1
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger('requests').setLevel(logging.DEBUG)
+```

@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T15:27:09.783178'
+  generated_at: '2025-12-16T15:50:54.179085'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -202,7 +202,115 @@ knowledge_base:
     \ for Storage API call\nconn = st.connection('snowflake')  # This is workspace,\
     \ not Storage API\n\n# CORRECT: Use Storage API token\nimport requests\nresponse\
     \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": storage_token}\n)\n```\n"
+    X-StorageApi-Token\": storage_token}\n)\n```\n\n\n## Error Codes Reference\n\n\
+    The Storage API returns standard HTTP status codes along with detailed error messages\
+    \ in the response body.\n\n### Common HTTP Status Codes\n\n| Status Code | Meaning\
+    \ | Common Causes |\n|-------------|---------|---------------|\n| **200** | Success\
+    \ | Request completed successfully |\n| **201** | Created | Resource created successfully\
+    \ |\n| **202** | Accepted | Async job initiated successfully |\n| **400** | Bad\
+    \ Request | Invalid parameters, malformed request |\n| **401** | Unauthorized\
+    \ | Invalid or missing API token |\n| **403** | Forbidden | Valid token but insufficient\
+    \ permissions |\n| **404** | Not Found | Table, bucket, or resource doesn't exist\
+    \ |\n| **405** | Method Not Allowed | Wrong HTTP method (e.g., GET instead of\
+    \ POST) |\n| **422** | Unprocessable Entity | Valid request but business logic\
+    \ error |\n| **429** | Too Many Requests | Rate limit exceeded |\n| **500** |\
+    \ Internal Server Error | Server-side error |\n| **503** | Service Unavailable\
+    \ | Temporary service disruption |\n\n### Error Response Format\n\nAll error responses\
+    \ follow this structure:\n\n```json\n{\n  \"status\": \"error\",\n  \"error\"\
+    : \"Error message\",\n  \"code\": \"storage.tables.notFound\",\n  \"exceptionId\"\
+    : \"unique-error-id\",\n  \"context\": {\n    \"tableId\": \"in.c-main.customers\"\
+    \n  }\n}\n```\n\n### Common Error Codes\n\n#### Authentication Errors\n\n**401\
+    \ - Invalid Token**\n```json\n{\n  \"error\": \"Invalid access token\",\n  \"\
+    code\": \"storage.tokenInvalid\"\n}\n```\n**Solution**: Check that `X-StorageApi-Token`\
+    \ header contains valid token.\n\n**403 - Insufficient Permissions**\n```json\n\
+    {\n  \"error\": \"You don't have access to this resource\",\n  \"code\": \"storage.accessDenied\"\
+    \n}\n```\n**Solution**: Token lacks required permissions. Use token with appropriate\
+    \ scope.\n\n#### Resource Errors\n\n**404 - Table Not Found**\n```json\n{\n  \"\
+    error\": \"Table in.c-main.customers not found\",\n  \"code\": \"storage.tables.notFound\"\
+    \n}\n```\n**Solution**: Verify table ID format and existence. List tables to confirm.\n\
+    \n**404 - Bucket Not Found**\n```json\n{\n  \"error\": \"Bucket in.c-main not\
+    \ found\",\n  \"code\": \"storage.buckets.notFound\"\n}\n```\n**Solution**: Create\
+    \ bucket first or verify bucket ID.\n\n**409 - Resource Already Exists**\n```json\n\
+    {\n  \"error\": \"Table in.c-main.customers already exists\",\n  \"code\": \"\
+    storage.tables.alreadyExists\"\n}\n```\n**Solution**: Use import endpoint for\
+    \ existing tables, or delete existing table first.\n\n#### Request Errors\n\n\
+    **400 - Invalid Parameters**\n```json\n{\n  \"error\": \"Invalid parameter: primaryKey\
+    \ must be an array\",\n  \"code\": \"storage.validation.invalidInput\"\n}\n```\n\
+    **Solution**: Check API documentation for correct parameter format.\n\n**400 -\
+    \ Invalid Table ID Format**\n```json\n{\n  \"error\": \"Invalid table ID format\"\
+    ,\n  \"code\": \"storage.tables.invalidId\"\n}\n```\n**Solution**: Use format\
+    \ `stage.c-bucket.table` (e.g., `in.c-main.customers`).\n\n**405 - Method Not\
+    \ Allowed**\n```json\n{\n  \"error\": \"Method not allowed\",\n  \"code\": \"\
+    storage.methodNotAllowed\"\n}\n```\n**Solution**: Use POST for `/export-async`\
+    \ and `/import-async` endpoints, not GET.\n\n**422 - Primary Key Required**\n\
+    ```json\n{\n  \"error\": \"Primary key must be set for incremental loads\",\n\
+    \  \"code\": \"storage.tables.primaryKeyRequired\"\n}\n```\n**Solution**: Set\
+    \ primary key before using `incremental: \"1\"` parameter.\n\n**422 - Invalid\
+    \ CSV Data**\n```json\n{\n  \"error\": \"CSV parse error: Invalid row format\"\
+    ,\n  \"code\": \"storage.tables.invalidCsvData\"\n}\n```\n**Solution**: Validate\
+    \ CSV format, check for proper escaping and encoding.\n\n#### Rate Limiting\n\n\
+    **429 - Rate Limit Exceeded**\n```json\n{\n  \"error\": \"Rate limit exceeded\"\
+    ,\n  \"code\": \"storage.rateLimitExceeded\",\n  \"retryAfter\": 60\n}\n```\n\
+    **Solution**: Implement exponential backoff. Respect `retryAfter` value.\n\n####\
+    \ Job Errors\n\n**Job Status: error**\n```json\n{\n  \"status\": \"error\",\n\
+    \  \"error\": {\n    \"message\": \"Table load failed: Invalid data format\",\n\
+    \    \"code\": \"storage.jobs.loadFailed\"\n  }\n}\n```\n**Solution**: Check job\
+    \ details for specific error. Validate input data.\n\n**Job Status: terminated**\n\
+    ```json\n{\n  \"status\": \"terminated\",\n  \"error\": {\n    \"message\": \"\
+    Job terminated due to timeout\",\n    \"code\": \"storage.jobs.timeout\"\n  }\n\
+    }\n```\n**Solution**: Split large operations into smaller chunks.\n\n### Error\
+    \ Handling Best Practices\n\n```python\nimport requests\nimport time\n\ndef safe_api_call(url,\
+    \ headers, method='get', **kwargs):\n    \"\"\"Make API call with comprehensive\
+    \ error handling.\"\"\"\n    max_retries = 3\n    retry_delay = 2\n    \n    for\
+    \ attempt in range(max_retries):\n        try:\n            response = requests.request(method,\
+    \ url, headers=headers, **kwargs)\n            \n            # Handle specific\
+    \ status codes\n            if response.status_code == 401:\n                raise\
+    \ ValueError(\"Invalid API token. Check KEBOOLA_TOKEN environment variable.\"\
+    )\n            \n            elif response.status_code == 403:\n             \
+    \   raise ValueError(\"Insufficient permissions. Token lacks required scope.\"\
+    )\n            \n            elif response.status_code == 404:\n             \
+    \   error_data = response.json()\n                raise ValueError(f\"Resource\
+    \ not found: {error_data.get('error', 'Unknown')}\")\n            \n         \
+    \   elif response.status_code == 405:\n                raise ValueError(f\"Wrong\
+    \ HTTP method. Endpoint may require POST instead of {method.upper()}.\")\n   \
+    \         \n            elif response.status_code == 422:\n                error_data\
+    \ = response.json()\n                raise ValueError(f\"Request validation failed:\
+    \ {error_data.get('error', 'Unknown')}\")\n            \n            elif response.status_code\
+    \ == 429:\n                # Rate limited - retry with backoff\n             \
+    \   retry_after = int(response.headers.get('Retry-After', retry_delay * (2 **\
+    \ attempt)))\n                print(f\"Rate limited. Retrying after {retry_after}s...\"\
+    )\n                time.sleep(retry_after)\n                continue\n       \
+    \     \n            elif response.status_code >= 500:\n                # Server\
+    \ error - retry\n                if attempt < max_retries - 1:\n             \
+    \       print(f\"Server error. Retrying in {retry_delay}s...\")\n            \
+    \        time.sleep(retry_delay)\n                    retry_delay *= 2\n     \
+    \               continue\n                raise Exception(f\"Server error: {response.status_code}\"\
+    )\n            \n            # Raise for any other error status\n            response.raise_for_status()\n\
+    \            \n            return response.json()\n            \n        except\
+    \ requests.exceptions.Timeout:\n            if attempt < max_retries - 1:\n  \
+    \              print(f\"Request timeout. Retrying...\")\n                time.sleep(retry_delay)\n\
+    \                continue\n            raise TimeoutError(\"API request timed\
+    \ out after multiple retries\")\n        \n        except requests.exceptions.ConnectionError:\n\
+    \            if attempt < max_retries - 1:\n                print(f\"Connection\
+    \ error. Retrying...\")\n                time.sleep(retry_delay)\n           \
+    \     continue\n            raise ConnectionError(\"Failed to connect to Keboola\
+    \ API\")\n    \n    raise Exception(\"Max retries exceeded\")\n\n# Usage example\n\
+    try:\n    result = safe_api_call(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token},\n        method='post',\n\
+    \        timeout=30\n    )\n    print(f\"Job started: {result['id']}\")\nexcept\
+    \ ValueError as e:\n    print(f\"User error: {e}\")\nexcept Exception as e:\n\
+    \    print(f\"System error: {e}\")\n```\n\n### Debugging Errors\n\n**Always check\
+    \ the response body for detailed error information:**\n\n```python\ntry:\n   \
+    \ response = requests.post(url, headers=headers)\n    response.raise_for_status()\n\
+    except requests.exceptions.HTTPError as e:\n    # Print full error details\n \
+    \   print(f\"Status: {e.response.status_code}\")\n    print(f\"Error body: {e.response.text}\"\
+    )\n    \n    # Parse error details if JSON\n    try:\n        error_data = e.response.json()\n\
+    \        print(f\"Error code: {error_data.get('code')}\")\n        print(f\"Error\
+    \ message: {error_data.get('error')}\")\n        print(f\"Exception ID: {error_data.get('exceptionId')}\"\
+    )\n    except:\n        pass\n```\n\n**Enable request logging for debugging:**\n\
+    \n```python\nimport logging\nimport http.client as http_client\n\n# Enable debug\
+    \ logging\nhttp_client.HTTPConnection.debuglevel = 1\nlogging.basicConfig(level=logging.DEBUG)\n\
+    logging.getLogger('requests').setLevel(logging.DEBUG)\n```\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
@@ -327,7 +435,23 @@ knowledge_base:
     \ Messages**:\n\n- `Table 'in.c-main.customers' does not exist` (in workspace)\
     \ → Use quoted, qualified name\n- `Invalid table ID` (in Storage API) → Remove\
     \ quotes and project ID\n- `SQL compilation error` (in workspace) → Missing quotes\
-    \ or project ID\n"
+    \ or project ID\n\n\n\n## 9. Not Checking Response Body for Error Details\n\n\
+    **Problem**: Only checking HTTP status code without reading error message\n\n\
+    **Solution**: Always parse response body for detailed error information:\n\n```python\n\
+    # ❌ WRONG - Generic error handling\ntry:\n    response = requests.post(url, headers=headers)\n\
+    \    response.raise_for_status()\nexcept requests.exceptions.HTTPError:\n    print(\"\
+    Request failed\")  # No details!\n\n# ✅ CORRECT - Detailed error handling\ntry:\n\
+    \    response = requests.post(url, headers=headers)\n    response.raise_for_status()\n\
+    except requests.exceptions.HTTPError as e:\n    error_data = e.response.json()\n\
+    \    error_code = error_data.get('code', 'unknown')\n    error_msg = error_data.get('error',\
+    \ str(e))\n    exception_id = error_data.get('exceptionId', 'N/A')\n    \n   \
+    \ print(f\"API Error: {error_msg}\")\n    print(f\"Error Code: {error_code}\"\
+    )\n    print(f\"Exception ID: {exception_id}\")\n    \n    # Handle specific error\
+    \ codes\n    if error_code == 'storage.tables.primaryKeyRequired':\n        print(\"\
+    Hint: Set primary key before using incremental loads\")\n    elif error_code ==\
+    \ 'storage.tables.notFound':\n        print(\"Hint: Check table ID format (stage.c-bucket.table)\"\
+    )\n```\n\n**Why**: The response body contains detailed error codes, messages,\
+    \ and context that help diagnose issues. HTTP status codes alone are too generic.\n"
   format: markdown
 - source: 04-component-development.md
   content: "# Component Development\n\n## Overview\n\nKeboola components are Docker\
