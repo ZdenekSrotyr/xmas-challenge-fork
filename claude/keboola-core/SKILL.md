@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-16T15:28:02.350184
+> Generated: 2025-12-16T16:33:17.993629
 
 ---
 
@@ -311,11 +311,13 @@ response.raise_for_status()
 
 ### Pagination
 
-Large tables should be exported in chunks:
+#### Data Preview Pagination
+
+For quick data preview with small result sets, use limit/offset pagination:
 
 ```python
 def export_table_paginated(table_id, chunk_size=10000):
-    """Export table in chunks."""
+    """Export table preview in chunks using limit/offset."""
     offset = 0
     all_data = []
 
@@ -328,6 +330,7 @@ def export_table_paginated(table_id, chunk_size=10000):
                 "offset": offset
             }
         )
+        response.raise_for_status()
 
         chunk = response.json()
         if not chunk:
@@ -338,6 +341,112 @@ def export_table_paginated(table_id, chunk_size=10000):
 
     return all_data
 ```
+
+**Note**: `data-preview` endpoint is limited to 1000 rows maximum. For larger datasets, use async export.
+
+#### API Response Pagination (List Operations)
+
+Many API endpoints that return lists support pagination parameters:
+
+```python
+def list_all_tables_paginated():
+    """List all tables with pagination support."""
+    all_tables = []
+    offset = 0
+    limit = 100
+
+    while True:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables",
+            headers={"X-StorageApi-Token": token},
+            params={
+                "limit": limit,
+                "offset": offset
+            }
+        )
+        response.raise_for_status()
+
+        tables = response.json()
+        if not tables:
+            break
+
+        all_tables.extend(tables)
+        
+        # If fewer results than limit, we've reached the end
+        if len(tables) < limit:
+            break
+            
+        offset += limit
+
+    return all_tables
+```
+
+#### Pagination Parameters
+
+Common pagination parameters across Keboola Storage API:
+
+- **limit**: Number of records to return (default and max vary by endpoint)
+- **offset**: Number of records to skip
+
+```python
+params = {
+    "limit": 100,    # Return up to 100 records
+    "offset": 200    # Skip first 200 records
+}
+```
+
+#### Full Table Export (Recommended for Large Tables)
+
+For exporting complete tables, especially large ones, use async export instead of pagination:
+
+```python
+def export_large_table(table_id):
+    """Export large table using async job (handles pagination internally)."""
+    # Start async export
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    # Poll for completion
+    import time
+    timeout = 600
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        job_response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        job_response.raise_for_status()
+        job = job_response.json()
+        
+        if job["status"] == "success":
+            # Download complete file (pagination handled by Keboola)
+            file_url = job["results"]["file"]["url"]
+            data_response = requests.get(file_url)
+            
+            with open("table_export.csv", "wb") as f:
+                f.write(data_response.content)
+            
+            return "table_export.csv"
+        
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Export failed: {error_msg}")
+        
+        time.sleep(2)
+    
+    raise TimeoutError("Export job timeout")
+```
+
+**When to use each approach**:
+
+- **data-preview with pagination**: Quick checks, small datasets (<1000 rows)
+- **List endpoints with pagination**: Browsing tables, buckets, configurations
+- **Async export**: Production data export, large tables (>1000 rows)
 
 ### Reading Data Incrementally
 
@@ -918,6 +1027,90 @@ else:
 - `Table 'in.c-main.customers' does not exist` (in workspace) → Use quoted, qualified name
 - `Invalid table ID` (in Storage API) → Remove quotes and project ID
 - `SQL compilation error` (in workspace) → Missing quotes or project ID
+
+
+## 9. Incorrect Pagination Usage
+
+**Problem**: Using data-preview pagination for large table exports or not handling pagination in list endpoints
+
+**Solution**: Choose the right pagination strategy for your use case:
+
+```python
+# ❌ WRONG - Using data-preview for large tables (limited to 1000 rows)
+def export_large_table_wrong(table_id):
+    offset = 0
+    limit = 1000
+    all_data = []
+    
+    while True:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables/{table_id}/data-preview",
+            headers={"X-StorageApi-Token": token},
+            params={"limit": limit, "offset": offset}
+        )
+        data = response.json()
+        if not data:
+            break
+        all_data.extend(data)
+        offset += limit
+    
+    return all_data  # Will never get more than 1000 rows!
+
+# ✅ CORRECT - Use async export for complete table data
+def export_large_table_correct(table_id):
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    # Poll and download (see full example in Storage API docs)
+    # Returns complete dataset regardless of size
+    return wait_for_export_job(job_id)
+
+# ❌ WRONG - Not handling pagination in list endpoints
+def get_all_tables_wrong():
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/tables",
+        headers={"X-StorageApi-Token": token}
+    )
+    return response.json()  # Only returns first page!
+
+# ✅ CORRECT - Paginate through all results
+def get_all_tables_correct():
+    all_tables = []
+    offset = 0
+    limit = 100
+    
+    while True:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables",
+            headers={"X-StorageApi-Token": token},
+            params={"limit": limit, "offset": offset}
+        )
+        response.raise_for_status()
+        tables = response.json()
+        
+        if not tables:
+            break
+        
+        all_tables.extend(tables)
+        
+        if len(tables) < limit:
+            break
+        
+        offset += limit
+    
+    return all_tables
+```
+
+**Rule of thumb**:
+- **Small preview (<100 rows)**: Use `data-preview` without pagination
+- **Browse/list resources**: Use pagination with `limit`/`offset`
+- **Full table export**: Use `export-async` (no manual pagination needed)
+
+**Why**: Different endpoints have different pagination capabilities and limits. Using the wrong approach can result in incomplete data or unnecessary complexity.
 
 
 ---
@@ -2019,7 +2212,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-16T15:28:02.350184",
+  "generated_at": "2025-12-16T16:33:17.993629",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
