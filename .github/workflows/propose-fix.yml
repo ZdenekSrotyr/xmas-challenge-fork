@@ -94,33 +94,39 @@ jobs:
               matches = re.findall(pattern, issue_body)
               mentioned_files.update(matches)
 
-          # Find all SKILL.md and guide files
-          all_skill_files = list(Path('.').rglob('SKILL.md'))
-          all_guide_files = list(Path('.').rglob('guides/**/*.md'))
+          # Find all source documentation files (NOT generated skills)
+          # Source docs are in docs/keboola/*.md - these are the single source of truth
+          docs_path = Path('docs/keboola')
+          all_doc_files = list(docs_path.glob('*.md')) if docs_path.exists() else []
 
           # If specific files mentioned, use those; otherwise use relevant category files
           target_files = []
 
           if mentioned_files:
-              # Use mentioned files
+              # Use mentioned files, but translate claude/ paths to docs/ paths
               for file_path in mentioned_files:
-                  if os.path.exists(file_path):
+                  # If path is in claude/keboola-core/, translate to docs/keboola/
+                  if 'claude/keboola-core/SKILL.md' in file_path or 'gemini/' in file_path:
+                      # User mentioned generated file - use all source docs instead
+                      target_files.extend([str(f) for f in all_doc_files])
+                      break
+                  elif os.path.exists(file_path):
                       target_files.append(file_path)
           else:
-              # Use category-based selection
+              # Use category-based selection - search in source docs
               if category == 'api-error':
                   # Look for files mentioning API, client, or authentication
-                  for file in all_skill_files + all_guide_files:
+                  for file in all_doc_files:
                       with open(file, 'r', encoding='utf-8') as f:
                           content = f.read().lower()
                           if any(term in content for term in ['api', 'client', 'authentication', 'endpoint']):
                               target_files.append(str(file))
               elif category == 'outdated-docs':
-                  # All SKILL files might need updating
-                  target_files = [str(f) for f in all_skill_files]
+                  # All source docs might need updating
+                  target_files = [str(f) for f in all_doc_files]
               elif category == 'pitfall':
                   # Look for files with "pitfall" or "common mistakes" sections
-                  for file in all_skill_files + all_guide_files:
+                  for file in all_doc_files:
                       with open(file, 'r', encoding='utf-8') as f:
                           content = f.read().lower()
                           if any(term in content for term in ['pitfall', 'common', 'mistake', 'avoid', 'error prevention']):
@@ -192,10 +198,13 @@ jobs:
           **Description:**
           {issue_body}
 
-          **Current Documentation:**
+          **Current Source Documentation (docs/keboola/):**
           {context}
 
-          Please analyze the issue and propose specific fixes to the documentation. Your response should be a JSON object with this structure:
+          **IMPORTANT**: You are viewing and must modify the SOURCE documentation files in docs/keboola/*.md
+          These are the single source of truth. DO NOT reference claude/ or gemini/ paths - those are auto-generated.
+
+          Please analyze the issue and propose specific fixes to the SOURCE documentation. Your response should be a JSON object with this structure:
 
           {{
             "analysis": "Brief analysis of what needs to be fixed and why",
@@ -388,6 +397,56 @@ jobs:
               print("\nWarning: No changes were applied")
               sys.exit(1)
           EOF
+
+      - name: Regenerate skills from modified source docs
+        id: regenerate-skills
+        if: steps.apply-changes.outputs.changes_applied > 0
+        run: |
+          echo "=" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔄 Regenerating Skills from Source Documentation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check if generators exist
+          if [ ! -f "automation/scripts/generators/claude_generator.py" ]; then
+            echo "⚠️ Warning: claude_generator.py not found, skipping Claude skill regeneration"
+            echo "⚠️ Claude generator not found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Regenerating Claude skill from docs/keboola/..."
+            python automation/scripts/generators/claude_generator.py \
+              --input docs/keboola/ \
+              --output claude/keboola-core/SKILL.md
+
+            if [ $? -eq 0 ]; then
+              echo "✅ Claude skill regenerated successfully"
+              echo "✅ Claude skill: claude/keboola-core/SKILL.md" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Claude skill regeneration failed"
+              echo "❌ Claude skill regeneration failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          if [ ! -f "automation/scripts/generators/gemini_generator.py" ]; then
+            echo "⚠️ Warning: gemini_generator.py not found, skipping Gemini skill regeneration"
+            echo "⚠️ Gemini generator not found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Regenerating Gemini skill from docs/keboola/..."
+            python automation/scripts/generators/gemini_generator.py \
+              --input docs/keboola/ \
+              --output gemini/keboola-core/skill.yaml
+
+            if [ $? -eq 0 ]; then
+              echo "✅ Gemini skill regenerated successfully"
+              echo "✅ Gemini skill: gemini/keboola-core/skill.yaml" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Gemini skill regeneration failed"
+              echo "❌ Gemini skill regeneration failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Source → Generated mapping complete**" >> $GITHUB_STEP_SUMMARY
+          echo "- Source docs modified in: \`docs/keboola/\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Skills regenerated in: \`claude/\` and \`gemini/\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Create branch and commit changes
         id: commit
