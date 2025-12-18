@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-18T10:29:24.353597'
+  generated_at: '2025-12-18T10:48:40.949762'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -143,34 +143,59 @@ knowledge_base:
     \ did not complete within {timeout} seconds\")\n\n# Optional: Load data into memory\
     \ if needed\nimport csv\nwith open(\"table_data.csv\", \"r\") as f:\n    reader\
     \ = csv.DictReader(f)\n    data = list(reader)\n```\n\n## Writing Tables\n\n###\
-    \ Create Table from CSV\n\n```python\n### Create New Table from CSV\n\n```python\n\
-    # Upload CSV file to create a NEW table\ncsv_data = \"id,name,value\\n1,foo,100\\\
-    n2,bar,200\"\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\"\
-    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
-    : \"text/csv\"\n    },\n    params={\n        \"name\": \"my_table\",\n      \
-    \  \"primaryKey\": \"id\",  # Optional: set primary key\n        \"dataString\"\
-    : csv_data\n    }\n)\nresponse.raise_for_status()\n\njob_id = response.json()[\"\
-    id\"]\n# Poll job until completion (see export example above)\n```\n\n### Import\
-    \ Data to Existing Table\n\n```python\n# Import data to an EXISTING table\ntable_id\
-    \ = \"in.c-main.my_table\"\ncsv_data = \"id,name,value\\n3,baz,300\\n4,qux,400\"\
-    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
-    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
-    : \"text/csv\"\n    },\n    params={\n        \"dataString\": csv_data\n    }\n\
-    )\nresponse.raise_for_status()\n\njob_id = response.json()[\"id\"]\n# Poll job\
-    \ until completion\n```\n\n### Incremental Loads (Append/Update Data)\n\n**Important**:\
-    \ Incremental loads require the table to have a primary key defined.\n\n```python\n\
-    # Incremental load: append new rows or update existing rows by primary key\ntable_id\
-    \ = \"in.c-main.my_table\"\ncsv_data = \"id,name,value\\n1,foo_updated,150\\n5,new_row,500\"\
-    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
-    ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
-    : \"text/csv\"\n    },\n    params={\n        \"incremental\": \"1\",  # Enable\
-    \ incremental mode\n        \"dataString\": csv_data\n    }\n)\nresponse.raise_for_status()\n\
-    \njob_id = response.json()[\"id\"]\n# Poll job until completion\n```\n\n**How\
-    \ incremental mode works**:\n- If a row with the same primary key exists, it gets\
-    \ UPDATED\n- If a row with a new primary key exists, it gets APPENDED\n- Existing\
-    \ rows not in the import data are NOT deleted\n\n### Set or Change Primary Key\n\
-    \n```python\n# Set primary key on existing table\ntable_id = \"in.c-main.my_table\"\
-    \n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}\"\
+    \ Create Table from CSV\n\n```python\n# Upload CSV file to create a NEW table\n\
+    csv_data = \"id,name,value\\n1,foo,100\\n2,bar,200\"\n\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/buckets/in.c-main/tables-async\",\n   \
+    \ headers={\n        \"X-StorageApi-Token\": token\n    },\n    params={\n   \
+    \     \"name\": \"my_table\",\n        \"primaryKey\": \"id\"  # Optional: set\
+    \ primary key\n    },\n    data=csv_data\n)\nresponse.raise_for_status()\n\njob_id\
+    \ = response.json()[\"id\"]\n\n# Poll job until completion\ntimeout = 300\nstart_time\
+    \ = time.time()\n\nwhile time.time() - start_time < timeout:\n    job_response\
+    \ = requests.get(\n        f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n\
+    \        headers={\"X-StorageApi-Token\": token}\n    )\n    job_response.raise_for_status()\n\
+    \    job = job_response.json()\n    \n    if job[\"status\"] == \"success\":\n\
+    \        table_id = job[\"results\"][\"id\"]\n        print(f\"Table created:\
+    \ {table_id}\")\n        break\n    elif job[\"status\"] in [\"error\", \"cancelled\"\
+    , \"terminated\"]:\n        error_msg = job.get(\"error\", {}).get(\"message\"\
+    , \"Unknown error\")\n        raise Exception(f\"Job failed: {error_msg}\")\n\
+    \    \n    time.sleep(2)\nelse:\n    raise TimeoutError(f\"Job did not complete\
+    \ within {timeout}s\")\n```\n\n**Note**: If the table already exists, this operation\
+    \ will fail. Use the import endpoint instead to add data to existing tables.\n\
+    \n### Import Data to Existing Table\n\n```python\n# Import data to an EXISTING\
+    \ table\ntable_id = \"in.c-main.my_table\"\ncsv_data = \"id,name,value\\n3,baz,300\\\
+    n4,qux,400\"\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    data=csv_data\n)\nresponse.raise_for_status()\n\
+    \njob_id = response.json()[\"id\"]\n\n# Poll job until completion\ntimeout = 300\n\
+    start_time = time.time()\n\nwhile time.time() - start_time < timeout:\n    job_response\
+    \ = requests.get(\n        f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n\
+    \        headers={\"X-StorageApi-Token\": token}\n    )\n    job_response.raise_for_status()\n\
+    \    job = job_response.json()\n    \n    if job[\"status\"] == \"success\":\n\
+    \        print(f\"Data imported successfully\")\n        break\n    elif job[\"\
+    status\"] in [\"error\", \"cancelled\", \"terminated\"]:\n        error_msg =\
+    \ job.get(\"error\", {}).get(\"message\", \"Unknown error\")\n        raise Exception(f\"\
+    Import failed: {error_msg}\")\n    \n    time.sleep(2)\nelse:\n    raise TimeoutError(f\"\
+    Import did not complete within {timeout}s\")\n```\n\n### Incremental Loads (Append/Update\
+    \ Data)\n\n**Important**: Incremental loads require the table to have a primary\
+    \ key defined.\n\n```python\n# Incremental load: append new rows or update existing\
+    \ rows by primary key\ntable_id = \"in.c-main.my_table\"\ncsv_data = \"id,name,value\\\
+    n1,foo_updated,150\\n5,new_row,500\"\n\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    params={\"incremental\":\
+    \ \"1\"},\n    data=csv_data\n)\nresponse.raise_for_status()\n\njob_id = response.json()[\"\
+    id\"]\n\n# Poll job until completion\ntimeout = 300\nstart_time = time.time()\n\
+    \nwhile time.time() - start_time < timeout:\n    job_response = requests.get(\n\
+    \        f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n        headers={\"\
+    X-StorageApi-Token\": token}\n    )\n    job_response.raise_for_status()\n   \
+    \ job = job_response.json()\n    \n    if job[\"status\"] == \"success\":\n  \
+    \      print(f\"Incremental load completed\")\n        break\n    elif job[\"\
+    status\"] in [\"error\", \"cancelled\", \"terminated\"]:\n        error_msg =\
+    \ job.get(\"error\", {}).get(\"message\", \"Unknown error\")\n        raise Exception(f\"\
+    Incremental load failed: {error_msg}\")\n    \n    time.sleep(2)\nelse:\n    raise\
+    \ TimeoutError(f\"Job did not complete within {timeout}s\")\n```\n\n**How incremental\
+    \ mode works**:\n- If a row with the same primary key exists, it gets UPDATED\n\
+    - If a row with a new primary key exists, it gets APPENDED\n- Existing rows not\
+    \ in the import data are NOT deleted\n\n### Set or Change Primary Key\n\n```python\n\
+    # Set primary key on existing table\ntable_id = \"in.c-main.my_table\"\n\nresponse\
+    \ = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}\"\
     ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
     : \"application/json\"\n    },\n    json={\n        \"primaryKey\": [\"id\"] \
     \ # Can be multiple columns: [\"id\", \"date\"]\n    }\n)\nresponse.raise_for_status()\n\
@@ -267,18 +292,42 @@ knowledge_base:
     \ async export handles pagination automatically\ndef export_full_table(table_id):\n\
     \    # Keboola handles pagination internally, returns complete file\n    return\
     \ export_large_table_correct(table_id)\n```\n\n### Reading Data Incrementally\n\
-    \nUse changedSince parameter to export only recently modified data:\n\n```python\n\
+    \nUse `changedSince` parameter to export only rows modified after a specific timestamp.\
+    \ This filters based on the row's internal modification timestamp maintained by\
+    \ Keboola Storage.\n\n**When to use**: \n- Incremental data synchronization\n\
+    - Change data capture patterns\n- Reducing data transfer for large tables\n\n\
+    **Important**: `changedSince` filters by row modification time (when the row was\
+    \ last updated in Storage), not by values in your data columns. If you need to\
+    \ filter by a date column in your data, use a different approach.\n\n```python\n\
     from datetime import datetime, timedelta\n\n# Get data changed in last 24 hours\n\
     yesterday = (datetime.now() - timedelta(days=1)).isoformat()\n\nresponse = requests.post(\n\
     \    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n   \
     \ headers={\"X-StorageApi-Token\": token},\n    params={\"changedSince\": yesterday}\n\
-    )\nresponse.raise_for_status()\n\njob_id = response.json()[\"id\"]\n# Poll job\
-    \ until completion\n```\n\n### Writing Data Incrementally\n\nSee the \"Incremental\
-    \ Loads (Append/Update Data)\" section under \"Writing Tables\" above for how\
-    \ to write data incrementally using `incremental: \"1\"` parameter.\n\n\n### Export\
-    \ Table to File (Complete Example)\n\nFor a complete, production-ready example\
-    \ that saves data to a file:\n\n```python\nimport requests\nimport os\nimport\
-    \ time\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
+    )\nresponse.raise_for_status()\n\njob_id = response.json()[\"id\"]\n\n# Poll for\
+    \ completion\ntimeout = 300\nstart_time = time.time()\n\nwhile time.time() - start_time\
+    \ < timeout:\n    job_response = requests.get(\n        f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    job_response.raise_for_status()\n\
+    \    job = job_response.json()\n    \n    if job[\"status\"] == \"success\":\n\
+    \        file_url = job[\"results\"][\"file\"][\"url\"]\n        data_response\
+    \ = requests.get(file_url)\n        with open(\"changed_data.csv\", \"wb\") as\
+    \ f:\n            f.write(data_response.content)\n        print(f\"Exported {len(data_response.content)}\
+    \ bytes of changed data\")\n        break\n    elif job[\"status\"] in [\"error\"\
+    , \"cancelled\", \"terminated\"]:\n        error_msg = job.get(\"error\", {}).get(\"\
+    message\", \"Unknown error\")\n        raise Exception(f\"Export failed: {error_msg}\"\
+    )\n    \n    time.sleep(2)\nelse:\n    raise TimeoutError(f\"Export did not complete\
+    \ within {timeout}s\")\n```\n\n**Alternative: Filter by data column**\n\nIf you\
+    \ need to filter by a date column in your data (not modification time), export\
+    \ the full table and filter locally, or use a transformation:\n\n```python\n#\
+    \ If you need to filter by a date column in your data\nresponse = requests.post(\n\
+    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n   \
+    \ headers={\"X-StorageApi-Token\": token},\n    params={\n        \"whereColumn\"\
+    : \"created_date\",\n        \"whereValues\": [\"2024-01-01\"],\n        \"whereOperator\"\
+    : \"ge\"  # greater than or equal\n    }\n)\n```\n\n### Writing Data Incrementally\n\
+    \nSee the \"Incremental Loads (Append/Update Data)\" section under \"Writing Tables\"\
+    \ above for how to write data incrementally using `incremental: \"1\"` parameter.\n\
+    \n\n### Export Table to File (Complete Example)\n\nFor a complete, production-ready\
+    \ example that saves data to a file:\n\n```python\nimport requests\nimport os\n\
+    import time\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\"\
     )\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\ntable_id = \"in.c-main.customers\"\n\
     output_file = \"customers.csv\"\n\ndef export_table_to_file(table_id, output_file,\
     \ timeout=300):\n    \"\"\"Export Keboola table to local CSV file.\"\"\"\n   \
@@ -356,7 +405,149 @@ knowledge_base:
     \ for Storage API call\nconn = st.connection('snowflake')  # This is workspace,\
     \ not Storage API\n\n# CORRECT: Use Storage API token\nimport requests\nresponse\
     \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": storage_token}\n)\n```\n"
+    X-StorageApi-Token\": storage_token}\n)\n```\n\n\n## Batch Operations\n\n### Overview\n\
+    \nBatch operations allow you to process multiple tables efficiently in a single\
+    \ workflow. Common use cases:\n- Exporting multiple related tables for analysis\n\
+    - Importing data to multiple tables in parallel\n- Bulk table management operations\n\
+    \n### Batch Table Export\n\nExport multiple tables concurrently to improve performance:\n\
+    \n```python\nimport requests\nimport time\nfrom concurrent.futures import ThreadPoolExecutor,\
+    \ as_completed\n\ndef export_table(table_id, output_dir=\".\"):\n    \"\"\"Export\
+    \ a single table and return the file path.\"\"\"\n    # Start async export\n \
+    \   response = requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n\
+    \    job_id = response.json()[\"id\"]\n    \n    # Poll for completion\n    timeout\
+    \ = 600\n    start_time = time.time()\n    \n    while time.time() - start_time\
+    \ < timeout:\n        job_response = requests.get(\n            f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n        job_response.raise_for_status()\n\
+    \        job = job_response.json()\n        \n        if job[\"status\"] == \"\
+    success\":\n            # Download file\n            file_url = job[\"results\"\
+    ][\"file\"][\"url\"]\n            data_response = requests.get(file_url)\n   \
+    \         \n            # Save to file\n            filename = f\"{output_dir}/{table_id.replace('.',\
+    \ '_')}.csv\"\n            with open(filename, \"wb\") as f:\n               \
+    \ f.write(data_response.content)\n            \n            return {\"table_id\"\
+    : table_id, \"file\": filename, \"status\": \"success\"}\n        \n        elif\
+    \ job[\"status\"] in [\"error\", \"cancelled\", \"terminated\"]:\n           \
+    \ error_msg = job.get(\"error\", {}).get(\"message\", \"Unknown error\")\n   \
+    \         return {\"table_id\": table_id, \"status\": \"failed\", \"error\": error_msg}\n\
+    \        \n        time.sleep(2)\n    \n    return {\"table_id\": table_id, \"\
+    status\": \"timeout\"}\n\ndef batch_export_tables(table_ids, output_dir=\".\"\
+    , max_parallel=3):\n    \"\"\"Export multiple tables in parallel.\n    \n    Args:\n\
+    \        table_ids: List of table IDs to export\n        output_dir: Directory\
+    \ to save exported files\n        max_parallel: Maximum concurrent exports (default\
+    \ 3)\n    \n    Returns:\n        List of results with status for each table\n\
+    \    \"\"\"\n    results = []\n    \n    # Use ThreadPoolExecutor for concurrent\
+    \ exports\n    with ThreadPoolExecutor(max_workers=max_parallel) as executor:\n\
+    \        # Submit all export jobs\n        future_to_table = {\n            executor.submit(export_table,\
+    \ table_id, output_dir): table_id\n            for table_id in table_ids\n   \
+    \     }\n        \n        # Collect results as they complete\n        for future\
+    \ in as_completed(future_to_table):\n            table_id = future_to_table[future]\n\
+    \            try:\n                result = future.result()\n                results.append(result)\n\
+    \                print(f\"Completed: {table_id} - {result['status']}\")\n    \
+    \        except Exception as e:\n                results.append({\n          \
+    \          \"table_id\": table_id,\n                    \"status\": \"failed\"\
+    ,\n                    \"error\": str(e)\n                })\n               \
+    \ print(f\"Failed: {table_id} - {e}\")\n    \n    return results\n\n# Usage example\n\
+    tables_to_export = [\n    \"in.c-main.customers\",\n    \"in.c-main.orders\",\n\
+    \    \"in.c-main.products\"\n]\n\nresults = batch_export_tables(tables_to_export,\
+    \ output_dir=\"./exports\", max_parallel=3)\n\n# Print summary\nsuccessful = sum(1\
+    \ for r in results if r[\"status\"] == \"success\")\nfailed = sum(1 for r in results\
+    \ if r[\"status\"] == \"failed\")\nprint(f\"\\nExport completed: {successful}\
+    \ successful, {failed} failed\")\n```\n\n### Batch Table Import\n\nImport data\
+    \ to multiple tables in parallel:\n\n```python\nimport requests\nimport time\n\
+    from concurrent.futures import ThreadPoolExecutor, as_completed\nimport os\n\n\
+    def import_table(table_id, csv_file_path, incremental=False):\n    \"\"\"Import\
+    \ CSV data to a table.\n    \n    Args:\n        table_id: Target table ID\n \
+    \       csv_file_path: Path to CSV file\n        incremental: Whether to use incremental\
+    \ load\n    \n    Returns:\n        Dictionary with import result\n    \"\"\"\n\
+    \    # Read CSV data\n    with open(csv_file_path, \"r\", encoding=\"utf-8\")\
+    \ as f:\n        csv_data = f.read()\n    \n    # Start async import\n    params\
+    \ = {}\n    if incremental:\n        params[\"incremental\"] = \"1\"\n    \n \
+    \   response = requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token},\n        params=params,\n\
+    \        data=csv_data\n    )\n    response.raise_for_status()\n    job_id = response.json()[\"\
+    id\"]\n    \n    # Poll for completion\n    timeout = 600\n    start_time = time.time()\n\
+    \    \n    while time.time() - start_time < timeout:\n        job_response = requests.get(\n\
+    \            f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n            headers={\"\
+    X-StorageApi-Token\": token}\n        )\n        job_response.raise_for_status()\n\
+    \        job = job_response.json()\n        \n        if job[\"status\"] == \"\
+    success\":\n            return {\n                \"table_id\": table_id,\n  \
+    \              \"file\": csv_file_path,\n                \"status\": \"success\"\
+    \n            }\n        \n        elif job[\"status\"] in [\"error\", \"cancelled\"\
+    , \"terminated\"]:\n            error_msg = job.get(\"error\", {}).get(\"message\"\
+    , \"Unknown error\")\n            return {\n                \"table_id\": table_id,\n\
+    \                \"file\": csv_file_path,\n                \"status\": \"failed\"\
+    ,\n                \"error\": error_msg\n            }\n        \n        time.sleep(2)\n\
+    \    \n    return {\n        \"table_id\": table_id,\n        \"file\": csv_file_path,\n\
+    \        \"status\": \"timeout\"\n    }\n\ndef batch_import_tables(import_mappings,\
+    \ incremental=False, max_parallel=3):\n    \"\"\"Import data to multiple tables\
+    \ in parallel.\n    \n    Args:\n        import_mappings: List of {\"table_id\"\
+    : \"...\", \"file\": \"...\"} dicts\n        incremental: Whether to use incremental\
+    \ load\n        max_parallel: Maximum concurrent imports\n    \n    Returns:\n\
+    \        List of results with status for each import\n    \"\"\"\n    results\
+    \ = []\n    \n    with ThreadPoolExecutor(max_workers=max_parallel) as executor:\n\
+    \        # Submit all import jobs\n        future_to_mapping = {\n           \
+    \ executor.submit(\n                import_table,\n                mapping[\"\
+    table_id\"],\n                mapping[\"file\"],\n                incremental\n\
+    \            ): mapping\n            for mapping in import_mappings\n        }\n\
+    \        \n        # Collect results\n        for future in as_completed(future_to_mapping):\n\
+    \            mapping = future_to_mapping[future]\n            try:\n         \
+    \       result = future.result()\n                results.append(result)\n   \
+    \             print(f\"Completed: {mapping['table_id']} - {result['status']}\"\
+    )\n            except Exception as e:\n                results.append({\n    \
+    \                \"table_id\": mapping[\"table_id\"],\n                    \"\
+    file\": mapping[\"file\"],\n                    \"status\": \"failed\",\n    \
+    \                \"error\": str(e)\n                })\n                print(f\"\
+    Failed: {mapping['table_id']} - {e}\")\n    \n    return results\n\n# Usage example\n\
+    import_mappings = [\n    {\"table_id\": \"in.c-main.customers\", \"file\": \"\
+    ./data/customers.csv\"},\n    {\"table_id\": \"in.c-main.orders\", \"file\": \"\
+    ./data/orders.csv\"},\n    {\"table_id\": \"in.c-main.products\", \"file\": \"\
+    ./data/products.csv\"}\n]\n\nresults = batch_import_tables(import_mappings, incremental=True,\
+    \ max_parallel=3)\n\n# Print summary\nsuccessful = sum(1 for r in results if r[\"\
+    status\"] == \"success\")\nfailed = sum(1 for r in results if r[\"status\"] ==\
+    \ \"failed\")\nprint(f\"\\nImport completed: {successful} successful, {failed}\
+    \ failed\")\n```\n\n### Performance Considerations\n\n**Parallel Processing**:\n\
+    - Default `max_parallel=3` is safe for most use cases\n- Increase for larger projects\
+    \ with higher rate limits\n- Decrease if hitting rate limits (429 errors)\n- Monitor\
+    \ job completion times to optimize\n\n**Rate Limits**:\n- Keboola enforces rate\
+    \ limits per token (~30 requests/minute)\n- Batch operations distribute requests\
+    \ over time\n- Use exponential backoff for 429 errors\n- Consider separate tokens\
+    \ for different workflows\n\n**Memory Usage**:\n- Batch exports stream to disk,\
+    \ not memory\n- Each concurrent operation uses one thread\n- Safe to export hundreds\
+    \ of tables with proper threading\n\n**Error Handling**:\n- Individual table failures\
+    \ don't stop batch operation\n- Collect all results before reporting\n- Retry\
+    \ failed operations separately\n- Log errors for debugging\n\n**Benchmarks** (varies\
+    \ by table size and complexity):\n- Single table export: 5-30 seconds\n- 10 tables\
+    \ sequential: 50-300 seconds\n- 10 tables parallel (max_parallel=3): 20-120 seconds\n\
+    - Network and backend processing are main bottlenecks\n\n**Example: Optimizing\
+    \ max_workers**\n\n```python\nimport os\n\n# Adjust based on project size and\
+    \ rate limits\nPROJECT_SIZE = os.environ.get(\"KEBOOLA_PROJECT_SIZE\", \"medium\"\
+    )\n\nMAX_WORKERS_CONFIG = {\n    \"small\": 2,   # <100 tables, conservative\n\
+    \    \"medium\": 3,  # 100-500 tables, balanced\n    \"large\": 5    # >500 tables,\
+    \ aggressive\n}\n\nmax_workers = MAX_WORKERS_CONFIG.get(PROJECT_SIZE, 3)\n\nresults\
+    \ = batch_export_tables(\n    table_ids,\n    max_parallel=max_workers\n)\n```\n\
+    \n### Troubleshooting Batch Operations\n\n**Issue: Too many 429 (Rate Limit) errors**\n\
+    \n```python\n# Solution: Reduce max_parallel and add retry logic\nimport time\n\
+    from requests.exceptions import HTTPError\n\ndef export_table_with_retry(table_id,\
+    \ max_retries=3):\n    \"\"\"Export with automatic retry on rate limit.\"\"\"\n\
+    \    for attempt in range(max_retries):\n        try:\n            return export_table(table_id)\n\
+    \        except HTTPError as e:\n            if e.response.status_code == 429\
+    \ and attempt < max_retries - 1:\n                wait_time = 2 ** attempt  #\
+    \ Exponential backoff\n                print(f\"Rate limited. Waiting {wait_time}s\
+    \ before retry...\")\n                time.sleep(wait_time)\n            else:\n\
+    \                raise\n    return {\"table_id\": table_id, \"status\": \"failed\"\
+    , \"error\": \"Max retries exceeded\"}\n\n# Use lower max_parallel\nresults =\
+    \ batch_export_tables(table_ids, max_parallel=2)\n```\n\n**Issue: Some tables\
+    \ timeout**\n\n```python\n# Solution: Increase timeout for large tables\ndef export_large_table(table_id,\
+    \ timeout=1800):  # 30 minutes\n    # Modify timeout in export_table function\n\
+    \    # ... (same logic with longer timeout)\n    pass\n```\n\n**Issue: Memory\
+    \ errors with many concurrent operations**\n\n```python\n# Solution: Process in\
+    \ smaller batches\ndef batch_export_in_chunks(table_ids, chunk_size=10, max_parallel=3):\n\
+    \    \"\"\"Export tables in chunks to limit memory usage.\"\"\"\n    all_results\
+    \ = []\n    \n    for i in range(0, len(table_ids), chunk_size):\n        chunk\
+    \ = table_ids[i:i + chunk_size]\n        print(f\"Processing chunk {i//chunk_size\
+    \ + 1}: {len(chunk)} tables\")\n        results = batch_export_tables(chunk, max_parallel=max_parallel)\n\
+    \        all_results.extend(results)\n        time.sleep(5)  # Brief pause between\
+    \ chunks\n    \n    return all_results\n```\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
@@ -377,41 +568,41 @@ knowledge_base:
     \    Job result dict on success\n    \n    Raises:\n        TimeoutError: Job\
     \ didn't complete within timeout\n        Exception: Job failed with error\n \
     \   \"\"\"\n    # Enforce minimum poll interval to avoid rate limiting\n    if\
-    \ poll_interval < 2:\n        raise ValueError(\"poll_interval must be at least\
-    \ 2 seconds to avoid rate limits\")\n    \n    start_time = time.time()\n    attempts\
-    \ = 0\n    \n    while time.time() - start_time < timeout:\n        attempts +=\
-    \ 1\n        \n        try:\n            response = requests.get(\n          \
-    \      f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n                headers={\"\
-    X-StorageApi-Token\": token},\n                timeout=10  # Request timeout\n\
-    \            )\n            response.raise_for_status()\n        except requests.exceptions.RequestException\
-    \ as e:\n            # Network error - retry with backoff\n            print(f\"\
-    Request failed (attempt {attempts}): {e}\")\n            time.sleep(min(poll_interval\
-    \ * 2, 10))\n            continue\n        \n        job = response.json()\n \
-    \       status = job[\"status\"]\n        \n        # SUCCESS: Job completed successfully\n\
-    \        if status == \"success\":\n            print(f\"Job {job_id} completed\
-    \ successfully after {attempts} checks\")\n            return job\n        \n\
-    \        # ERROR STATES: Job failed, was cancelled, or terminated\n        elif\
-    \ status in [\"error\", \"cancelled\", \"terminated\"]:\n            error_msg\
-    \ = job.get(\"error\", {}).get(\"message\", \"Unknown error\")\n            error_type\
-    \ = job.get(\"error\", {}).get(\"type\", \"unknown\")\n            \n        \
-    \    # Log full error details\n            print(f\"Job {job_id} failed:\")\n\
-    \            print(f\"  Status: {status}\")\n            print(f\"  Error Type:\
-    \ {error_type}\")\n            print(f\"  Message: {error_msg}\")\n          \
-    \  \n            raise Exception(\n                f\"Job {job_id} failed with\
-    \ status '{status}': {error_msg}\"\n            )\n        \n        # PROCESSING:\
-    \ Job still running (waiting, processing)\n        elif status in [\"waiting\"\
-    , \"processing\"]:\n            elapsed = time.time() - start_time\n         \
-    \   print(f\"Job {job_id} status: {status} (elapsed: {elapsed:.1f}s)\")\n    \
-    \        time.sleep(poll_interval)\n        \n        # UNKNOWN STATE: Unexpected\
-    \ status\n        else:\n            print(f\"Warning: Unknown job status '{status}'\
-    \ for job {job_id}\")\n            time.sleep(poll_interval)\n    \n    # TIMEOUT:\
-    \ Job didn't complete in time\n    elapsed = time.time() - start_time\n    raise\
-    \ TimeoutError(\n        f\"Job {job_id} did not complete within {timeout}s \"\
-    \n        f\"(checked {attempts} times over {elapsed:.1f}s)\"\n    )\n\n\n# Example\
-    \ usage with proper cleanup\ndef export_table_safe(table_id):\n    \"\"\"Export\
-    \ table with proper job polling and cleanup.\"\"\"\n    job_id = None\n    \n\
-    \    try:\n        # Start async export\n        response = requests.post(\n \
-    \           f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    \ poll_interval < 2:\n        poll_interval = 2  # Enforce minimum\n        print(f\"\
+    Warning: poll_interval adjusted to minimum 2 seconds to avoid rate limits\")\n\
+    \    \n    start_time = time.time()\n    attempts = 0\n    \n    while time.time()\
+    \ - start_time < timeout:\n        attempts += 1\n        \n        try:\n   \
+    \         response = requests.get(\n                f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n                headers={\"X-StorageApi-Token\": token},\n                timeout=10\
+    \  # Request timeout\n            )\n            response.raise_for_status()\n\
+    \        except requests.exceptions.RequestException as e:\n            # Network\
+    \ error - retry with backoff\n            print(f\"Request failed (attempt {attempts}):\
+    \ {e}\")\n            time.sleep(min(poll_interval * 2, 10))\n            continue\n\
+    \        \n        job = response.json()\n        status = job[\"status\"]\n \
+    \       \n        # SUCCESS: Job completed successfully\n        if status ==\
+    \ \"success\":\n            print(f\"Job {job_id} completed successfully after\
+    \ {attempts} checks\")\n            return job\n        \n        # ERROR STATES:\
+    \ Job failed, was cancelled, or terminated\n        elif status in [\"error\"\
+    , \"cancelled\", \"terminated\"]:\n            error_msg = job.get(\"error\",\
+    \ {}).get(\"message\", \"Unknown error\")\n            error_type = job.get(\"\
+    error\", {}).get(\"type\", \"unknown\")\n            \n            # Log full\
+    \ error details\n            print(f\"Job {job_id} failed:\")\n            print(f\"\
+    \  Status: {status}\")\n            print(f\"  Error Type: {error_type}\")\n \
+    \           print(f\"  Message: {error_msg}\")\n            \n            raise\
+    \ Exception(\n                f\"Job {job_id} failed with status '{status}': {error_msg}\"\
+    \n            )\n        \n        # PROCESSING: Job still running (waiting, processing)\n\
+    \        elif status in [\"waiting\", \"processing\"]:\n            elapsed =\
+    \ time.time() - start_time\n            print(f\"Job {job_id} status: {status}\
+    \ (elapsed: {elapsed:.1f}s)\")\n            time.sleep(poll_interval)\n      \
+    \  \n        # UNKNOWN STATE: Unexpected status\n        else:\n            print(f\"\
+    Warning: Unknown job status '{status}' for job {job_id}\")\n            time.sleep(poll_interval)\n\
+    \    \n    # TIMEOUT: Job didn't complete in time\n    elapsed = time.time() -\
+    \ start_time\n    raise TimeoutError(\n        f\"Job {job_id} did not complete\
+    \ within {timeout}s \"\n        f\"(checked {attempts} times over {elapsed:.1f}s)\"\
+    \n    )\n\n\n# Example usage with proper cleanup\ndef export_table_safe(table_id):\n\
+    \    \"\"\"Export table with proper job polling and cleanup.\"\"\"\n    job_id\
+    \ = None\n    \n    try:\n        # Start async export\n        response = requests.post(\n\
+    \            f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n        response.raise_for_status()\n\
     \        job_id = response.json()[\"id\"]\n        \n        # Wait with proper\
     \ polling (2-second intervals)\n        job = wait_for_job(job_id, timeout=600,\

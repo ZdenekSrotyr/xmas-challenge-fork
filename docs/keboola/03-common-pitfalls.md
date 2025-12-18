@@ -47,7 +47,8 @@ def wait_for_job(job_id, timeout=300, poll_interval=2):
     """
     # Enforce minimum poll interval to avoid rate limiting
     if poll_interval < 2:
-        raise ValueError("poll_interval must be at least 2 seconds to avoid rate limits")
+        poll_interval = 2  # Enforce minimum
+        print(f"Warning: poll_interval adjusted to minimum 2 seconds to avoid rate limits")
     
     start_time = time.time()
     attempts = 0
