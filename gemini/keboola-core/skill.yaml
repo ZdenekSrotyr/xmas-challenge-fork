@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-18T10:29:24.353597'
+  generated_at: '2025-12-18T13:56:51.771340'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -356,7 +356,266 @@ knowledge_base:
     \ for Storage API call\nconn = st.connection('snowflake')  # This is workspace,\
     \ not Storage API\n\n# CORRECT: Use Storage API token\nimport requests\nresponse\
     \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": storage_token}\n)\n```\n"
+    X-StorageApi-Token\": storage_token}\n)\n```\n\n## Batch Operations\n\nBatch operations\
+    \ allow you to work with multiple tables efficiently, reducing overhead and improving\
+    \ performance for bulk data transfers.\n\n### Prerequisites\n\nBefore using batch\
+    \ operations, ensure you have the required imports and variables set up:\n\n```python\n\
+    import requests\nimport os\nimport time\nimport csv\nfrom typing import List,\
+    \ Dict, Any\n\n# Initialize connection variables\nstack_url = os.environ.get(\"\
+    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"\
+    ]\n\n# Verify authentication\nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tokens/verify\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\nresponse.raise_for_status()\n\
+    print(f\"Authenticated as: {response.json()['description']}\")\n```\n\n### Helper\
+    \ Functions\n\n#### Job Polling Helper\n\nReusable function for polling async\
+    \ jobs with proper error handling:\n\n```python\ndef poll_job_until_complete(job_id:\
+    \ str, timeout: int = 600, poll_interval: int = 3) -> Dict[str, Any]:\n    \"\"\
+    \"\n    Poll Keboola job until completion.\n    \n    Args:\n        job_id: Keboola\
+    \ job ID to monitor\n        timeout: Maximum wait time in seconds (default 10\
+    \ minutes)\n        poll_interval: Seconds between status checks (minimum 2 seconds)\n\
+    \    \n    Returns:\n        Job result dictionary on success\n    \n    Raises:\n\
+    \        TimeoutError: Job didn't complete within timeout\n        Exception:\
+    \ Job failed with error\n    \"\"\"\n    if poll_interval < 2:\n        raise\
+    \ ValueError(\"poll_interval must be at least 2 seconds to avoid rate limits\"\
+    )\n    \n    start_time = time.time()\n    attempts = 0\n    \n    while time.time()\
+    \ - start_time < timeout:\n        attempts += 1\n        \n        try:\n   \
+    \         response = requests.get(\n                f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n                headers={\"X-StorageApi-Token\": token},\n                timeout=10\n\
+    \            )\n            response.raise_for_status()\n        except requests.exceptions.RequestException\
+    \ as e:\n            print(f\"Request failed (attempt {attempts}): {e}\")\n  \
+    \          time.sleep(min(poll_interval * 2, 10))\n            continue\n    \
+    \    \n        job = response.json()\n        status = job[\"status\"]\n     \
+    \   \n        if status == \"success\":\n            print(f\"Job {job_id} completed\
+    \ successfully\")\n            return job\n        \n        elif status in [\"\
+    error\", \"cancelled\", \"terminated\"]:\n            error_msg = job.get(\"error\"\
+    , {}).get(\"message\", \"Unknown error\")\n            raise Exception(f\"Job\
+    \ {job_id} failed with status '{status}': {error_msg}\")\n        \n        elif\
+    \ status in [\"waiting\", \"processing\"]:\n            elapsed = time.time()\
+    \ - start_time\n            if attempts % 10 == 0:  # Log every 10th check\n \
+    \               print(f\"Job {job_id} still {status} (elapsed: {elapsed:.1f}s)\"\
+    )\n            time.sleep(poll_interval)\n        \n        else:\n          \
+    \  print(f\"Warning: Unknown job status '{status}' for job {job_id}\")\n     \
+    \       time.sleep(poll_interval)\n    \n    elapsed = time.time() - start_time\n\
+    \    raise TimeoutError(\n        f\"Job {job_id} did not complete within {timeout}s\
+    \ \"\n        f\"(checked {attempts} times over {elapsed:.1f}s)\"\n    )\n```\n\
+    \n#### Export Helper with Retry\n\nWrapper for exporting single tables with built-in\
+    \ retry logic:\n\n```python\ndef export_table(table_id: str, output_file: str\
+    \ = None, **params) -> str:\n    \"\"\"\n    Export single table using async job.\n\
+    \    \n    Args:\n        table_id: Table ID (e.g., 'in.c-main.customers')\n \
+    \       output_file: Optional output filename (default: table_id.csv)\n      \
+    \  **params: Additional export parameters (changedSince, whereColumn, etc.)\n\
+    \    \n    Returns:\n        Path to downloaded CSV file\n    \n    Raises:\n\
+    \        Exception: Export failed\n    \"\"\"\n    if output_file is None:\n \
+    \       output_file = f\"{table_id.replace('.', '_')}.csv\"\n    \n    # Start\
+    \ async export\n    response = requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token},\n        params=params\n \
+    \   )\n    response.raise_for_status()\n    job_id = response.json()[\"id\"]\n\
+    \    \n    print(f\"Exporting {table_id} (job: {job_id})\")\n    \n    # Poll\
+    \ for completion using helper\n    job = poll_job_until_complete(job_id, timeout=600,\
+    \ poll_interval=3)\n    \n    # Download file\n    file_url = job[\"results\"\
+    ][\"file\"][\"url\"]\n    data_response = requests.get(file_url)\n    data_response.raise_for_status()\n\
+    \    \n    with open(output_file, \"wb\") as f:\n        f.write(data_response.content)\n\
+    \    \n    print(f\"Exported {table_id} to {output_file}\")\n    return output_file\n\
+    \n\ndef export_table_with_retry(table_id: str, output_file: str = None, max_retries:\
+    \ int = 3, **params) -> str:\n    \"\"\"\n    Export table with automatic retry\
+    \ on failure.\n    \n    Args:\n        table_id: Table ID to export\n       \
+    \ output_file: Optional output filename\n        max_retries: Number of retry\
+    \ attempts (default: 3)\n        **params: Additional export parameters\n    \n\
+    \    Returns:\n        Path to downloaded CSV file\n    \n    Raises:\n      \
+    \  Exception: Export failed after all retries\n    \"\"\"\n    for attempt in\
+    \ range(max_retries):\n        try:\n            return export_table(table_id,\
+    \ output_file, **params)\n        except Exception as e:\n            if attempt\
+    \ < max_retries - 1:\n                wait_time = 2 ** attempt\n             \
+    \   print(f\"Export attempt {attempt + 1} failed: {e}\")\n                print(f\"\
+    Retrying in {wait_time}s...\")\n                time.sleep(wait_time)\n      \
+    \      else:\n                raise Exception(f\"Export failed after {max_retries}\
+    \ attempts: {e}\")\n```\n\n### Batch Export\n\nExport multiple tables in parallel\
+    \ or sequence.\n\n#### Sequential Export\n\nExport tables one at a time (safer\
+    \ for many tables):\n\n```python\ndef batch_export_tables_sequential(\n    table_ids:\
+    \ List[str],\n    output_dir: str = \"exports\",\n    **export_params\n) -> Dict[str,\
+    \ str]:\n    \"\"\"\n    Export multiple tables sequentially.\n    \n    Args:\n\
+    \        table_ids: List of table IDs to export\n        output_dir: Directory\
+    \ to save exported files (created if needed)\n        **export_params: Additional\
+    \ parameters passed to each export\n                        (changedSince, whereColumn,\
+    \ whereValues, whereOperator)\n    \n    Returns:\n        Dictionary mapping\
+    \ table_id to output file path\n    \n    Example:\n        results = batch_export_tables_sequential(\n\
+    \            ['in.c-main.customers', 'in.c-main.orders'],\n            output_dir='data',\n\
+    \            changedSince='2024-01-01T00:00:00Z'\n        )\n    \"\"\"\n    import\
+    \ os\n    os.makedirs(output_dir, exist_ok=True)\n    \n    results = {}\n   \
+    \ failed = {}\n    \n    print(f\"Starting batch export of {len(table_ids)} tables...\"\
+    )\n    \n    for i, table_id in enumerate(table_ids, 1):\n        print(f\"\\\
+    n[{i}/{len(table_ids)}] Processing {table_id}\")\n        \n        output_file\
+    \ = os.path.join(\n            output_dir,\n            f\"{table_id.replace('.',\
+    \ '_')}.csv\"\n        )\n        \n        try:\n            export_table_with_retry(table_id,\
+    \ output_file, **export_params)\n            results[table_id] = output_file\n\
+    \        except Exception as e:\n            print(f\"Failed to export {table_id}:\
+    \ {e}\")\n            failed[table_id] = str(e)\n    \n    print(f\"\\n=== Batch\
+    \ Export Complete ===\")\n    print(f\"Success: {len(results)}/{len(table_ids)}\
+    \ tables\")\n    if failed:\n        print(f\"Failed: {len(failed)} tables\")\n\
+    \        for table_id, error in failed.items():\n            print(f\"  - {table_id}:\
+    \ {error}\")\n    \n    if failed:\n        raise Exception(f\"Batch export completed\
+    \ with {len(failed)} failures\")\n    \n    return results\n```\n\n#### Parallel\
+    \ Export (Advanced)\n\nExport tables concurrently for faster processing:\n\n```python\n\
+    from concurrent.futures import ThreadPoolExecutor, as_completed\n\ndef batch_export_tables_parallel(\n\
+    \    table_ids: List[str],\n    output_dir: str = \"exports\",\n    max_workers:\
+    \ int = 5,\n    **export_params\n) -> Dict[str, str]:\n    \"\"\"\n    Export\
+    \ multiple tables in parallel using thread pool.\n    \n    Args:\n        table_ids:\
+    \ List of table IDs to export\n        output_dir: Directory to save exported\
+    \ files\n        max_workers: Maximum concurrent exports (default: 5, max recommended:\
+    \ 10)\n        **export_params: Additional export parameters\n    \n    Returns:\n\
+    \        Dictionary mapping table_id to output file path\n    \n    Warning:\n\
+    \        - Higher concurrency may trigger rate limits\n        - Recommended max_workers:\
+    \ 5-10\n        - Monitor for 429 (Too Many Requests) errors\n    \n    Example:\n\
+    \        results = batch_export_tables_parallel(\n            table_ids=['in.c-main.table1',\
+    \ 'in.c-main.table2'],\n            max_workers=5\n        )\n    \"\"\"\n   \
+    \ import os\n    os.makedirs(output_dir, exist_ok=True)\n    \n    results = {}\n\
+    \    failed = {}\n    \n    print(f\"Starting parallel export of {len(table_ids)}\
+    \ tables (workers: {max_workers})...\")\n    \n    def export_one_table(table_id):\n\
+    \        \"\"\"Export single table (thread worker function).\"\"\"\n        output_file\
+    \ = os.path.join(\n            output_dir,\n            f\"{table_id.replace('.',\
+    \ '_')}.csv\"\n        )\n        export_table_with_retry(table_id, output_file,\
+    \ **export_params)\n        return table_id, output_file\n    \n    with ThreadPoolExecutor(max_workers=max_workers)\
+    \ as executor:\n        futures = {executor.submit(export_one_table, tid): tid\
+    \ for tid in table_ids}\n        \n        for future in as_completed(futures):\n\
+    \            table_id = futures[future]\n            try:\n                tid,\
+    \ output_file = future.result()\n                results[tid] = output_file\n\
+    \                print(f\"✓ Completed: {tid}\")\n            except Exception\
+    \ as e:\n                failed[table_id] = str(e)\n                print(f\"\
+    ✗ Failed: {table_id} - {e}\")\n    \n    print(f\"\\n=== Batch Export Complete\
+    \ ===\")\n    print(f\"Success: {len(results)}/{len(table_ids)} tables\")\n  \
+    \  if failed:\n        print(f\"Failed: {len(failed)} tables\")\n    \n    if\
+    \ failed:\n        raise Exception(f\"Batch export completed with {len(failed)}\
+    \ failures\")\n    \n    return results\n```\n\n#### Filtered Export\n\nExport\
+    \ multiple tables with SQL filtering:\n\n```python\ndef batch_export_with_filter(\n\
+    \    table_configs: List[Dict[str, Any]],\n    output_dir: str = \"exports\"\n\
+    ) -> Dict[str, str]:\n    \"\"\"\n    Export tables with individual filter configurations.\n\
+    \    \n    Args:\n        table_configs: List of table configurations with filters\n\
+    \        output_dir: Output directory\n    \n    Table config structure:\n   \
+    \     {\n            'table_id': 'in.c-main.customers',\n            'whereColumn':\
+    \ 'status',        # Column to filter on\n            'whereValues': ['active'],\
+    \      # Values to match\n            'whereOperator': 'eq',          # Operator:\
+    \ eq, ne, gt, lt, ge, le\n            'changedSince': '2024-01-01'   # Optional:\
+    \ incremental export\n        }\n    \n    Available whereOperator values:\n \
+    \       - 'eq': Equal (column = value)\n        - 'ne': Not equal (column != value)\n\
+    \        - 'gt': Greater than (column > value)\n        - 'lt': Less than (column\
+    \ < value)\n        - 'ge': Greater than or equal (column >= value)\n        -\
+    \ 'le': Less than or equal (column <= value)\n    \n    Example:\n        configs\
+    \ = [\n            {\n                'table_id': 'in.c-main.customers',\n   \
+    \             'whereColumn': 'status',\n                'whereValues': ['active',\
+    \ 'pending'],\n                'whereOperator': 'eq'\n            },\n       \
+    \     {\n                'table_id': 'in.c-main.orders',\n                'whereColumn':\
+    \ 'order_date',\n                'whereValues': ['2024-01-01'],\n            \
+    \    'whereOperator': 'ge',\n                'changedSince': '2024-01-01T00:00:00Z'\n\
+    \            }\n        ]\n        results = batch_export_with_filter(configs)\n\
+    \    \"\"\"\n    import os\n    os.makedirs(output_dir, exist_ok=True)\n    \n\
+    \    results = {}\n    \n    for config in table_configs:\n        table_id =\
+    \ config['table_id']\n        print(f\"\\nExporting {table_id} with filters...\"\
+    )\n        \n        # Build export parameters\n        export_params = {}\n \
+    \       if 'whereColumn' in config:\n            export_params['whereColumn']\
+    \ = config['whereColumn']\n        if 'whereValues' in config:\n            export_params['whereValues']\
+    \ = config['whereValues']\n        if 'whereOperator' in config:\n           \
+    \ export_params['whereOperator'] = config['whereOperator']\n        if 'changedSince'\
+    \ in config:\n            export_params['changedSince'] = config['changedSince']\n\
+    \        \n        output_file = os.path.join(\n            output_dir,\n    \
+    \        f\"{table_id.replace('.', '_')}_filtered.csv\"\n        )\n        \n\
+    \        results[table_id] = export_table_with_retry(\n            table_id,\n\
+    \            output_file,\n            **export_params\n        )\n    \n    return\
+    \ results\n```\n\n### Batch Import\n\nImport multiple CSV files into Keboola tables.\n\
+    \n#### Sequential Import\n\n```python\ndef batch_import_tables(\n    import_configs:\
+    \ List[Dict[str, Any]],\n    incremental: bool = False\n) -> Dict[str, str]:\n\
+    \    \"\"\"\n    Import multiple CSV files to Keboola tables.\n    \n    Args:\n\
+    \        import_configs: List of import configurations\n        incremental: If\
+    \ True, use incremental mode for all imports\n    \n    Import config structure:\n\
+    \        {\n            'table_id': 'in.c-main.customers',  # Target table\n \
+    \           'file_path': 'data/customers.csv',  # Source CSV file\n          \
+    \  'incremental': True,                 # Optional: override global setting\n\
+    \            'primary_key': ['id']               # Required for incremental\n\
+    \        }\n    \n    Returns:\n        Dictionary mapping table_id to job_id\n\
+    \    \n    Example:\n        configs = [\n            {\n                'table_id':\
+    \ 'in.c-main.customers',\n                'file_path': 'exports/customers.csv',\n\
+    \                'incremental': True,\n                'primary_key': ['id']\n\
+    \            },\n            {\n                'table_id': 'in.c-main.orders',\n\
+    \                'file_path': 'exports/orders.csv'\n            }\n        ]\n\
+    \        results = batch_import_tables(configs)\n    \"\"\"\n    results = {}\n\
+    \    failed = {}\n    \n    print(f\"Starting batch import of {len(import_configs)}\
+    \ tables...\")\n    \n    for i, config in enumerate(import_configs, 1):\n   \
+    \     table_id = config['table_id']\n        file_path = config['file_path']\n\
+    \        is_incremental = config.get('incremental', incremental)\n        \n \
+    \       print(f\"\\n[{i}/{len(import_configs)}] Importing {table_id}\")\n    \
+    \    \n        try:\n            # Verify file exists\n            if not os.path.exists(file_path):\n\
+    \                raise FileNotFoundError(f\"File not found: {file_path}\")\n \
+    \           \n            # Read CSV data\n            with open(file_path, 'rb')\
+    \ as f:\n                csv_data = f.read()\n            \n            # Set\
+    \ primary key if incremental and specified\n            if is_incremental and\
+    \ 'primary_key' in config:\n                print(f\"Setting primary key: {config['primary_key']}\"\
+    )\n                pk_response = requests.post(\n                    f\"https://{stack_url}/v2/storage/tables/{table_id}\"\
+    ,\n                    headers={\"X-StorageApi-Token\": token},\n            \
+    \        json={\"primaryKey\": config['primary_key']}\n                )\n   \
+    \             pk_response.raise_for_status()\n            \n            # Start\
+    \ import job\n            params = {}\n            if is_incremental:\n      \
+    \          params['incremental'] = '1'\n            \n            response = requests.post(\n\
+    \                f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n                headers={\n                    \"X-StorageApi-Token\": token,\n\
+    \                    \"Content-Type\": \"text/csv\"\n                },\n    \
+    \            params=params,\n                data=csv_data\n            )\n  \
+    \          response.raise_for_status()\n            job_id = response.json()[\"\
+    id\"]\n            \n            # Poll for completion using helper\n        \
+    \    poll_job_until_complete(job_id, timeout=600, poll_interval=3)\n         \
+    \   \n            results[table_id] = job_id\n            print(f\"✓ Imported\
+    \ {table_id}\")\n            \n        except Exception as e:\n            print(f\"\
+    ✗ Failed to import {table_id}: {e}\")\n            failed[table_id] = str(e)\n\
+    \    \n    print(f\"\\n=== Batch Import Complete ===\")\n    print(f\"Success:\
+    \ {len(results)}/{len(import_configs)} tables\")\n    if failed:\n        print(f\"\
+    Failed: {len(failed)} tables\")\n        for table_id, error in failed.items():\n\
+    \            print(f\"  - {table_id}: {error}\")\n    \n    if failed:\n     \
+    \   raise Exception(f\"Batch import completed with {len(failed)} failures\")\n\
+    \    \n    return results\n```\n\n### Performance Considerations\n\n#### Choosing\
+    \ Export Strategy\n\n**Use Sequential Export when**:\n- Exporting many tables\
+    \ (>20)\n- Tables are very large (>1GB each)\n- Rate limiting is a concern\n-\
+    \ You need predictable resource usage\n\n**Use Parallel Export when**:\n- Exporting\
+    \ few tables (<20)\n- Tables are small to medium (<500MB each)\n- Speed is critical\n\
+    - You have verified rate limits allow concurrency\n\n#### Optimization Tips\n\n\
+    ```python\n# 1. Use filtered exports to reduce data transfer\nexport_params =\
+    \ {\n    'whereColumn': 'date',\n    'whereValues': ['2024-01-01'],\n    'whereOperator':\
+    \ 'ge'  # Only export rows where date >= 2024-01-01\n}\n\n# 2. Use incremental\
+    \ exports for changed data only\nexport_params = {\n    'changedSince': '2024-01-01T00:00:00Z'\
+    \  # Only export modified rows\n}\n\n# 3. Adjust parallel workers based on table\
+    \ sizes\nif avg_table_size_mb < 100:\n    max_workers = 10  # Small tables: more\
+    \ concurrency\nelif avg_table_size_mb < 500:\n    max_workers = 5   # Medium tables:\
+    \ moderate concurrency\nelse:\n    max_workers = 2   # Large tables: minimal concurrency\n\
+    \n# 4. Monitor and handle rate limits\ntry:\n    results = batch_export_tables_parallel(table_ids,\
+    \ max_workers=5)\nexcept Exception as e:\n    if '429' in str(e):  # Rate limited\n\
+    \        print(\"Rate limit hit, retrying with sequential export...\")\n     \
+    \   results = batch_export_tables_sequential(table_ids)\n    else:\n        raise\n\
+    ```\n\n#### Memory Management\n\n```python\n# For very large imports, stream data\
+    \ instead of loading into memory\ndef import_large_file(table_id: str, file_path:\
+    \ str):\n    \"\"\"\n    Import large file using streaming upload.\n    \"\"\"\
+    \n    # Upload file to Keboola Files first\n    with open(file_path, 'rb') as\
+    \ f:\n        upload_response = requests.post(\n            f\"https://{stack_url}/v2/storage/files\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            files={'file':\
+    \ f}\n        )\n    upload_response.raise_for_status()\n    file_id = upload_response.json()['id']\n\
+    \    \n    # Import from uploaded file\n    response = requests.post(\n      \
+    \  f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n     \
+    \   headers={\"X-StorageApi-Token\": token},\n        json={'dataFileId': file_id}\n\
+    \    )\n    response.raise_for_status()\n    \n    return poll_job_until_complete(response.json()['id'])\n\
+    ```\n\n#### Complete Example\n\n```python\n# Initialize variables (see Prerequisites\
+    \ section)\nimport os\nimport requests\nfrom typing import List, Dict, Any\n\n\
+    stack_url = os.environ.get(\"KEBOOLA_STACK_URL\", \"connection.keboola.com\")\n\
+    token = os.environ[\"KEBOOLA_TOKEN\"]\n\n# Define tables to process\ntable_ids\
+    \ = [\n    'in.c-main.customers',\n    'in.c-main.orders',\n    'in.c-main.products'\n\
+    ]\n\n# Step 1: Export all tables with filter\nprint(\"Step 1: Exporting tables...\"\
+    )\nexport_results = batch_export_tables_sequential(\n    table_ids,\n    output_dir='exports',\n\
+    \    changedSince='2024-01-01T00:00:00Z'  # Only export recent data\n)\n\n# Step\
+    \ 2: Process exported files (example: data transformation)\nprint(\"\\nStep 2:\
+    \ Processing data...\")\nimport pandas as pd\n\nfor table_id, file_path in export_results.items():\n\
+    \    df = pd.read_csv(file_path)\n    # Perform transformations\n    df['processed_date']\
+    \ = pd.Timestamp.now()\n    # Save processed file\n    df.to_csv(file_path, index=False)\n\
+    \    print(f\"Processed {table_id}: {len(df)} rows\")\n\n# Step 3: Import processed\
+    \ files back\nprint(\"\\nStep 3: Importing processed data...\")\nimport_configs\
+    \ = [\n    {\n        'table_id': table_id,\n        'file_path': file_path,\n\
+    \        'incremental': True,\n        'primary_key': ['id']\n    }\n    for table_id,\
+    \ file_path in export_results.items()\n]\n\nimport_results = batch_import_tables(import_configs)\n\
+    \nprint(\"\\n=== Pipeline Complete ===\")\nprint(f\"Exported: {len(export_results)}\
+    \ tables\")\nprint(f\"Imported: {len(import_results)} tables\")\n```\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
