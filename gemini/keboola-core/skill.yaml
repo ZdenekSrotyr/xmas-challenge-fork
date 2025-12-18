@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-16T17:01:54.057679'
+  generated_at: '2025-12-18T09:57:10.380842'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -174,22 +174,36 @@ knowledge_base:
     ,\n    headers={\n        \"X-StorageApi-Token\": token,\n        \"Content-Type\"\
     : \"application/json\"\n    },\n    json={\n        \"primaryKey\": [\"id\"] \
     \ # Can be multiple columns: [\"id\", \"date\"]\n    }\n)\nresponse.raise_for_status()\n\
-    ```\n```\n\n## Common Patterns\n\n### Pagination\n\n#### Data Preview Pagination\n\
-    \nFor quick data preview with small result sets, use limit/offset pagination:\n\
-    \n```python\ndef export_table_paginated(table_id, chunk_size=10000):\n    \"\"\
-    \"Export table preview in chunks using limit/offset.\"\"\"\n    offset = 0\n \
-    \   all_data = []\n\n    while True:\n        response = requests.get(\n     \
-    \       f\"https://{stack_url}/v2/storage/tables/{table_id}/data-preview\",\n\
-    \            headers={\"X-StorageApi-Token\": token},\n            params={\n\
+    ```\n```\n\n## Common Patterns\n\n### Pagination\n\n#### Overview\n\nKeboola Storage\
+    \ API supports pagination for different scenarios. Choose the right approach based\
+    \ on your use case:\n\n| Use Case | Method | Max Records | Best For |\n|----------|--------|-------------|----------|\n\
+    | Quick data preview | `data-preview` with limit/offset | 1,000 rows | Testing,\
+    \ sampling |\n| List resources | List endpoints with limit/offset | Unlimited\
+    \ | Browsing tables/buckets |\n| Full table export | `export-async` | Unlimited\
+    \ | Production data export |\n\n#### Data Preview Pagination\n\nFor quick data\
+    \ preview with small result sets, use limit/offset pagination:\n\n```python\n\
+    import requests\nimport os\n\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\"\
+    , \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"]\ntable_id\
+    \ = \"in.c-main.customers\"\n\ndef export_table_paginated(table_id, chunk_size=100):\n\
+    \    \"\"\"Export table preview in chunks using limit/offset.\n    \n    Args:\n\
+    \        table_id: Table identifier (e.g., 'in.c-main.customers')\n        chunk_size:\
+    \ Number of rows per request (max 1000)\n    \n    Returns:\n        List of all\
+    \ rows (limited to 1000 total)\n    \"\"\"\n    offset = 0\n    all_data = []\n\
+    \n    while True:\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage/tables/{table_id}/data-preview\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            params={\n\
     \                \"limit\": chunk_size,\n                \"offset\": offset\n\
     \            }\n        )\n        response.raise_for_status()\n\n        chunk\
     \ = response.json()\n        if not chunk:\n            break\n\n        all_data.extend(chunk)\n\
-    \        offset += chunk_size\n\n    return all_data\n```\n\n**Note**: `data-preview`\
-    \ endpoint is limited to 1000 rows maximum. For larger datasets, use async export.\n\
-    \n#### API Response Pagination (List Operations)\n\nMany API endpoints that return\
-    \ lists support pagination parameters:\n\n```python\ndef list_all_tables_paginated():\n\
-    \    \"\"\"List all tables with pagination support.\"\"\"\n    all_tables = []\n\
-    \    offset = 0\n    limit = 100\n\n    while True:\n        response = requests.get(\n\
+    \        offset += chunk_size\n        \n        # Stop if we've reached the endpoint\
+    \ limit\n        if len(all_data) >= 1000:\n            break\n\n    return all_data\n\
+    \n# Usage\npreview_data = export_table_paginated(\"in.c-main.customers\", chunk_size=100)\n\
+    print(f\"Retrieved {len(preview_data)} rows\")\n```\n\n**Important**: `data-preview`\
+    \ endpoint is limited to 1000 rows maximum. For larger datasets, use async export\
+    \ (see below).\n\n#### API Response Pagination (List Operations)\n\nMany API endpoints\
+    \ that return lists support pagination parameters:\n\n```python\ndef list_all_tables_paginated():\n\
+    \    \"\"\"List all tables with pagination support.\n    \n    Returns:\n    \
+    \    List of all tables in the project\n    \"\"\"\n    all_tables = []\n    offset\
+    \ = 0\n    limit = 100\n\n    while True:\n        response = requests.get(\n\
     \            f\"https://{stack_url}/v2/storage/tables\",\n            headers={\"\
     X-StorageApi-Token\": token},\n            params={\n                \"limit\"\
     : limit,\n                \"offset\": offset\n            }\n        )\n     \
@@ -197,35 +211,112 @@ knowledge_base:
     \ not tables:\n            break\n\n        all_tables.extend(tables)\n      \
     \  \n        # If fewer results than limit, we've reached the end\n        if\
     \ len(tables) < limit:\n            break\n            \n        offset += limit\n\
-    \n    return all_tables\n```\n\n#### Pagination Parameters\n\nCommon pagination\
-    \ parameters across Keboola Storage API:\n\n- **limit**: Number of records to\
-    \ return (default and max vary by endpoint)\n- **offset**: Number of records to\
-    \ skip\n\n```python\nparams = {\n    \"limit\": 100,    # Return up to 100 records\n\
-    \    \"offset\": 200    # Skip first 200 records\n}\n```\n\n#### Full Table Export\
-    \ (Recommended for Large Tables)\n\nFor exporting complete tables, especially\
-    \ large ones, use async export instead of pagination:\n\n```python\ndef export_large_table(table_id):\n\
-    \    \"\"\"Export large table using async job (handles pagination internally).\"\
-    \"\"\n    # Start async export\n    response = requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    \n    return all_tables\n\n# Usage\nall_tables = list_all_tables_paginated()\n\
+    for table in all_tables:\n    print(f\"{table['id']}: {table['rowsCount']} rows\"\
+    )\n```\n\n**Other endpoints that support pagination**:\n\n```python\n# List buckets\n\
+    def list_all_buckets():\n    all_buckets = []\n    offset = 0\n    limit = 100\n\
+    \    \n    while True:\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage/buckets\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            params={\"\
+    limit\": limit, \"offset\": offset}\n        )\n        response.raise_for_status()\n\
+    \        buckets = response.json()\n        \n        if not buckets or len(buckets)\
+    \ == 0:\n            break\n        \n        all_buckets.extend(buckets)\n  \
+    \      \n        if len(buckets) < limit:\n            break\n        \n     \
+    \   offset += limit\n    \n    return all_buckets\n\n# List jobs\ndef list_recent_jobs(max_jobs=1000):\n\
+    \    all_jobs = []\n    offset = 0\n    limit = 100\n    \n    while len(all_jobs)\
+    \ < max_jobs:\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage/jobs\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            params={\"\
+    limit\": limit, \"offset\": offset}\n        )\n        response.raise_for_status()\n\
+    \        jobs = response.json()\n        \n        if not jobs:\n            break\n\
+    \        \n        all_jobs.extend(jobs)\n        \n        if len(jobs) < limit:\n\
+    \            break\n        \n        offset += limit\n    \n    return all_jobs[:max_jobs]\n\
+    ```\n\n#### Pagination Parameters\n\nCommon pagination parameters across Keboola\
+    \ Storage API:\n\n- **limit**: Number of records to return per request\n  - Default:\
+    \ Varies by endpoint (typically 100)\n  - Maximum: Varies by endpoint (typically\
+    \ 1000)\n- **offset**: Number of records to skip from the beginning\n  - Default:\
+    \ 0\n  - Use case: Implement page-based navigation\n\n```python\n# Example: Get\
+    \ page 3 with 50 items per page\npage = 3\npage_size = 50\n\nparams = {\n    \"\
+    limit\": page_size,\n    \"offset\": (page - 1) * page_size  # Skip first 100\
+    \ records\n}\n\nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\"\
+    ,\n    headers={\"X-StorageApi-Token\": token},\n    params=params\n)\n```\n\n\
+    #### Full Table Export (Recommended for Large Tables)\n\nFor exporting complete\
+    \ tables, especially large ones, use async export instead of pagination. The platform\
+    \ handles pagination internally:\n\n```python\nimport time\n\ndef export_large_table(table_id,\
+    \ output_file=\"export.csv\"):\n    \"\"\"Export large table using async job (handles\
+    \ pagination internally).\n    \n    Args:\n        table_id: Table identifier\n\
+    \        output_file: Path to save exported data\n    \n    Returns:\n       \
+    \ Path to exported file\n    \"\"\"\n    # Start async export\n    response =\
+    \ requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n\
-    \    job_id = response.json()[\"id\"]\n    \n    # Poll for completion\n    import\
-    \ time\n    timeout = 600\n    start_time = time.time()\n    \n    while time.time()\
-    \ - start_time < timeout:\n        job_response = requests.get(\n            f\"\
-    https://{stack_url}/v2/storage/jobs/{job_id}\",\n            headers={\"X-StorageApi-Token\"\
-    : token}\n        )\n        job_response.raise_for_status()\n        job = job_response.json()\n\
-    \        \n        if job[\"status\"] == \"success\":\n            # Download\
-    \ complete file (pagination handled by Keboola)\n            file_url = job[\"\
-    results\"][\"file\"][\"url\"]\n            data_response = requests.get(file_url)\n\
-    \            \n            with open(\"table_export.csv\", \"wb\") as f:\n   \
-    \             f.write(data_response.content)\n            \n            return\
-    \ \"table_export.csv\"\n        \n        elif job[\"status\"] in [\"error\",\
-    \ \"cancelled\", \"terminated\"]:\n            error_msg = job.get(\"error\",\
+    \    job_id = response.json()[\"id\"]\n    \n    print(f\"Export job started:\
+    \ {job_id}\")\n    \n    # Poll for completion\n    timeout = 600  # 10 minutes\n\
+    \    start_time = time.time()\n    \n    while time.time() - start_time < timeout:\n\
+    \        job_response = requests.get(\n            f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n        job_response.raise_for_status()\n\
+    \        job = job_response.json()\n        \n        if job[\"status\"] == \"\
+    success\":\n            # Download complete file (all rows, pagination handled\
+    \ by Keboola)\n            file_url = job[\"results\"][\"file\"][\"url\"]\n  \
+    \          data_response = requests.get(file_url)\n            \n            with\
+    \ open(output_file, \"wb\") as f:\n                f.write(data_response.content)\n\
+    \            \n            print(f\"Export complete: {output_file}\")\n      \
+    \      return output_file\n        \n        elif job[\"status\"] in [\"error\"\
+    , \"cancelled\", \"terminated\"]:\n            error_msg = job.get(\"error\",\
     \ {}).get(\"message\", \"Unknown error\")\n            raise Exception(f\"Export\
-    \ failed: {error_msg}\")\n        \n        time.sleep(2)\n    \n    raise TimeoutError(\"\
-    Export job timeout\")\n```\n\n**When to use each approach**:\n\n- **data-preview\
-    \ with pagination**: Quick checks, small datasets (<1000 rows)\n- **List endpoints\
-    \ with pagination**: Browsing tables, buckets, configurations\n- **Async export**:\
-    \ Production data export, large tables (>1000 rows)\n\n### Reading Data Incrementally\n\
-    \nUse changedSince parameter to export only recently modified data:\n\n```python\n\
+    \ failed: {error_msg}\")\n        \n        time.sleep(2)\n    \n    raise TimeoutError(f\"\
+    Export job {job_id} did not complete within {timeout}s\")\n\n# Usage\nexport_large_table(\"\
+    in.c-main.customers\", \"customers_full.csv\")\n```\n\n#### When to Use Each Approach\n\
+    \n**Use `data-preview` with pagination when**:\n- Testing queries or data structure\n\
+    - Sampling data for analysis\n- Building UI with small result sets\n- Need quick\
+    \ response times\n- Working with ≤1000 rows\n\n**Use list endpoints with pagination\
+    \ when**:\n- Browsing available tables, buckets, or configurations\n- Building\
+    \ admin interfaces\n- Need to process all resources in batches\n- Searching across\
+    \ resources\n\n**Use `export-async` when**:\n- Exporting complete tables for processing\n\
+    - Working with >1000 rows\n- Need all data for ETL/backup\n- Performance is critical\n\
+    - Building production data pipelines\n\n#### Complete Pagination Example\n\nHere's\
+    \ a complete example that demonstrates all pagination approaches:\n\n```python\n\
+    import requests\nimport os\nimport time\nimport csv\n\nstack_url = os.environ.get(\"\
+    KEBOOLA_STACK_URL\", \"connection.keboola.com\")\ntoken = os.environ[\"KEBOOLA_TOKEN\"\
+    ]\n\ndef preview_table_sample(table_id, sample_size=100):\n    \"\"\"Get small\
+    \ sample of table data.\"\"\"\n    response = requests.get(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/data-preview\"\
+    ,\n        headers={\"X-StorageApi-Token\": token},\n        params={\"limit\"\
+    : sample_size}\n    )\n    response.raise_for_status()\n    return response.json()\n\
+    \ndef find_table_by_name(table_name_substring):\n    \"\"\"Search for tables by\
+    \ name using pagination.\"\"\"\n    matching_tables = []\n    offset = 0\n   \
+    \ limit = 100\n    \n    while True:\n        response = requests.get(\n     \
+    \       f\"https://{stack_url}/v2/storage/tables\",\n            headers={\"X-StorageApi-Token\"\
+    : token},\n            params={\"limit\": limit, \"offset\": offset}\n       \
+    \ )\n        response.raise_for_status()\n        tables = response.json()\n \
+    \       \n        if not tables:\n            break\n        \n        for table\
+    \ in tables:\n            if table_name_substring.lower() in table['name'].lower():\n\
+    \                matching_tables.append(table)\n        \n        if len(tables)\
+    \ < limit:\n            break\n        \n        offset += limit\n    \n    return\
+    \ matching_tables\n\ndef export_table_full(table_id, output_file):\n    \"\"\"\
+    Export complete table regardless of size.\"\"\"\n    response = requests.post(\n\
+    \        f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n\
+    \        headers={\"X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n\
+    \    job_id = response.json()[\"id\"]\n    \n    timeout = 600\n    start_time\
+    \ = time.time()\n    \n    while time.time() - start_time < timeout:\n       \
+    \ job_response = requests.get(\n            f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n            headers={\"X-StorageApi-Token\": token}\n        )\n        job_response.raise_for_status()\n\
+    \        job = job_response.json()\n        \n        if job[\"status\"] == \"\
+    success\":\n            file_url = job[\"results\"][\"file\"][\"url\"]\n     \
+    \       data_response = requests.get(file_url)\n            \n            with\
+    \ open(output_file, \"wb\") as f:\n                f.write(data_response.content)\n\
+    \            \n            # Count rows\n            with open(output_file, \"\
+    r\") as f:\n                row_count = sum(1 for _ in csv.reader(f)) - 1  # Subtract\
+    \ header\n            \n            return row_count\n        \n        elif job[\"\
+    status\"] in [\"error\", \"cancelled\", \"terminated\"]:\n            raise Exception(f\"\
+    Export failed: {job.get('error', {}).get('message')}\")\n        \n        time.sleep(2)\n\
+    \    \n    raise TimeoutError(\"Export timeout\")\n\n# Example workflow\nif __name__\
+    \ == \"__main__\":\n    # 1. Quick preview\n    print(\"Getting sample data...\"\
+    )\n    sample = preview_table_sample(\"in.c-main.customers\", 10)\n    print(f\"\
+    Sample: {len(sample)} rows\")\n    \n    # 2. Find tables\n    print(\"\\nSearching\
+    \ for customer tables...\")\n    tables = find_table_by_name(\"customer\")\n \
+    \   print(f\"Found {len(tables)} tables:\")\n    for table in tables:\n      \
+    \  print(f\"  - {table['id']} ({table['rowsCount']} rows)\")\n    \n    # 3. Export\
+    \ full table\n    print(\"\\nExporting full table...\")\n    row_count = export_table_full(\"\
+    in.c-main.customers\", \"customers_export.csv\")\n    print(f\"Exported {row_count}\
+    \ rows to customers_export.csv\")\n```\n\n### Reading Data Incrementally\n\nUse\
+    \ changedSince parameter to export only recently modified data:\n\n```python\n\
     from datetime import datetime, timedelta\n\n# Get data changed in last 24 hours\n\
     yesterday = (datetime.now() - timedelta(days=1)).isoformat()\n\nresponse = requests.post(\n\
     \    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n   \
