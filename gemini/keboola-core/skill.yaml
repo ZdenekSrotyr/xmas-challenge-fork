@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-18T09:55:36.918311'
+  generated_at: '2025-12-18T10:08:02.362364'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -554,7 +554,138 @@ knowledge_base:
     ,\n    headers={\"X-StorageApi-Token\": LIMITED_TOKEN}\n)  # ✗ Fails - no access\
     \ to in.c-sales bucket\n```\n\n**Why**: Using the principle of least privilege\
     \ improves security. Read-only tokens can't accidentally modify data, and bucket-specific\
-    \ tokens limit blast radius if compromised.\n"
+    \ tokens limit blast radius if compromised.\n\n## 6. Authentication Errors\n\n\
+    ### Invalid Token (401 Unauthorized)\n\n**Problem**: Getting 401 errors when making\
+    \ API calls\n\n**Common Causes**:\n\n1. **Token not set or incorrect**:\n```python\n\
+    # ❌ WRONG - Token not loaded\nheaders = {\"X-StorageApi-Token\": \"\"}\n\n# ✅\
+    \ CORRECT - Load from environment\nimport os\ntoken = os.environ.get(\"KEBOOLA_TOKEN\"\
+    )\nif not token:\n    raise ValueError(\"KEBOOLA_TOKEN environment variable not\
+    \ set\")\n\nheaders = {\"X-StorageApi-Token\": token}\n```\n\n2. **Token expired**:\n\
+    ```python\ndef check_token_expiration(token, stack_url):\n    \"\"\"Check if token\
+    \ is valid and when it expires.\"\"\"\n    try:\n        response = requests.get(\n\
+    \            f\"https://{stack_url}/v2/storage/tokens/verify\",\n            headers={\"\
+    X-StorageApi-Token\": token}\n        )\n        response.raise_for_status()\n\
+    \        \n        token_info = response.json()\n        expires = token_info.get('expires')\n\
+    \        \n        if expires:\n            from datetime import datetime\n  \
+    \          expiry_date = datetime.fromisoformat(expires.replace('Z', '+00:00'))\n\
+    \            print(f\"Token expires: {expiry_date}\")\n            \n        \
+    \    if datetime.now(expiry_date.tzinfo) > expiry_date:\n                raise\
+    \ Exception(\"Token has expired. Create a new token in Keboola UI.\")\n      \
+    \  else:\n            print(\"Token does not expire\")\n        \n        return\
+    \ token_info\n        \n    except requests.exceptions.HTTPError as e:\n     \
+    \   if e.response.status_code == 401:\n            raise Exception(\n        \
+    \        \"Invalid token. Check that:\\n\"\n                \"1. Token is copied\
+    \ correctly (no extra spaces)\\n\"\n                \"2. Token hasn't been deleted\
+    \ in Keboola UI\\n\"\n                \"3. Token hasn't expired\"\n          \
+    \  )\n        raise\n\n# Usage\ncheck_token_expiration(token, stack_url)\n```\n\
+    \n3. **Wrong stack URL**:\n```python\n# ❌ WRONG - Hardcoded wrong stack\nstack_url\
+    \ = \"connection.keboola.com\"  # Your project might be on EU stack\n\n# ✅ CORRECT\
+    \ - Use environment variable\nstack_url = os.environ.get(\"KEBOOLA_STACK_URL\"\
+    , \"connection.keboola.com\")\n\n# ✅ VERIFY - Test token on correct stack\nresponse\
+    \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tokens/verify\",\n  \
+    \  headers={\"X-StorageApi-Token\": token}\n)\nif response.status_code == 401:\n\
+    \    print(f\"Token invalid for stack: {stack_url}\")\n    print(\"Check your\
+    \ project's stack URL in Keboola UI\")\n```\n\n### Permission Denied (403 Forbidden)\n\
+    \n**Problem**: Token is valid but operation is not allowed\n\n**Solution**: Verify\
+    \ token has required permissions\n\n```python\ndef diagnose_permission_error(token,\
+    \ stack_url, operation):\n    \"\"\"Diagnose why operation is forbidden.\"\"\"\
+    \n    response = requests.get(\n        f\"https://{stack_url}/v2/storage/tokens/verify\"\
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n    response.raise_for_status()\n\
+    \    token_info = response.json()\n    \n    print(f\"Token: {token_info['description']}\"\
+    )\n    print(f\"Can manage buckets: {token_info.get('canManageBuckets', False)}\"\
+    )\n    print(f\"Bucket permissions: {token_info.get('bucketPermissions', {})}\"\
+    )\n    \n    if operation == 'write' and not token_info.get('canManageBuckets'):\n\
+    \        print(\"\\n❌ ERROR: Token lacks write permissions\")\n        print(\"\
+    SOLUTION: Create a new token with 'Manage Buckets' enabled\")\n        return\
+    \ False\n    \n    if operation == 'read' and not token_info.get('bucketPermissions'):\n\
+    \        print(\"\\n❌ ERROR: Token has no bucket access\")\n        print(\"SOLUTION:\
+    \ Grant bucket-specific read permissions\")\n        return False\n    \n    return\
+    \ True\n\n# Usage\ntry:\n    response = requests.post(\n        f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n        headers={\"X-StorageApi-Token\": token},\n        params={\"dataString\"\
+    : csv_data}\n    )\n    response.raise_for_status()\nexcept requests.exceptions.HTTPError\
+    \ as e:\n    if e.response.status_code == 403:\n        diagnose_permission_error(token,\
+    \ stack_url, 'write')\n    raise\n```\n\n### Token Scope Issues\n\n**Problem**:\
+    \ Token has wrong scope for the operation\n\n**Solution**: Use appropriate token\
+    \ type\n\n```python\n# ❌ WRONG - Using read-only token for data import\nREAD_TOKEN\
+    \ = os.environ['KEBOOLA_READ_TOKEN']\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": READ_TOKEN},  # Will fail with 403\n \
+    \   params={\"dataString\": data}\n)\n\n# ✅ CORRECT - Use write token for imports\n\
+    WRITE_TOKEN = os.environ['KEBOOLA_WRITE_TOKEN']\nresponse = requests.post(\n \
+    \   f\"https://{stack_url}/v2/storage/tables/{table_id}/import-async\",\n    headers={\"\
+    X-StorageApi-Token\": WRITE_TOKEN},\n    params={\"dataString\": data}\n)\n\n\
+    # ✅ BEST - Validate token scope before operation\ndef get_appropriate_token(operation):\n\
+    \    \"\"\"Get token with appropriate permissions.\"\"\"\n    if operation in\
+    \ ['write', 'import', 'create', 'delete']:\n        token = os.environ.get('KEBOOLA_WRITE_TOKEN')\n\
+    \        if not token:\n            raise ValueError(\n                \"Write\
+    \ operation requires KEBOOLA_WRITE_TOKEN. \"\n                \"Set environment\
+    \ variable with a token that has write permissions.\"\n            )\n    else:\n\
+    \        token = os.environ.get('KEBOOLA_READ_TOKEN') or os.environ.get('KEBOOLA_TOKEN')\n\
+    \        if not token:\n            raise ValueError(\"No Keboola token found\
+    \ in environment variables\")\n    \n    return token\n\n# Usage\ntoken = get_appropriate_token('import')\n\
+    ```\n\n### Network and Proxy Issues\n\n**Problem**: Authentication fails due to\
+    \ network configuration\n\n**Solution**: Configure requests properly for your\
+    \ network\n\n```python\nimport requests\nfrom requests.adapters import HTTPAdapter\n\
+    from requests.packages.urllib3.util.retry import Retry\n\ndef create_session_with_retry():\n\
+    \    \"\"\"Create session with retry logic and proxy support.\"\"\"\n    session\
+    \ = requests.Session()\n    \n    # Configure retries\n    retry_strategy = Retry(\n\
+    \        total=3,\n        status_forcelist=[429, 500, 502, 503, 504],\n     \
+    \   allowed_methods=[\"HEAD\", \"GET\", \"POST\", \"PUT\", \"DELETE\"],\n    \
+    \    backoff_factor=1\n    )\n    adapter = HTTPAdapter(max_retries=retry_strategy)\n\
+    \    session.mount(\"https://\", adapter)\n    session.mount(\"http://\", adapter)\n\
+    \    \n    # Configure proxy if needed\n    proxy = os.environ.get('HTTP_PROXY')\
+    \ or os.environ.get('HTTPS_PROXY')\n    if proxy:\n        session.proxies = {\n\
+    \            'http': proxy,\n            'https': proxy\n        }\n    \n   \
+    \ # Set timeout\n    session.timeout = 30\n    \n    return session\n\n# Usage\n\
+    session = create_session_with_retry()\n\ntry:\n    response = session.get(\n \
+    \       f\"https://{stack_url}/v2/storage/tokens/verify\",\n        headers={\"\
+    X-StorageApi-Token\": token},\n        timeout=30\n    )\n    response.raise_for_status()\n\
+    \    print(\"Authentication successful\")\nexcept requests.exceptions.Timeout:\n\
+    \    print(\"Request timed out. Check network connectivity.\")\nexcept requests.exceptions.ProxyError:\n\
+    \    print(\"Proxy error. Check HTTP_PROXY/HTTPS_PROXY environment variables.\"\
+    )\nexcept requests.exceptions.SSLError:\n    print(\"SSL error. Check certificate\
+    \ configuration.\")\nexcept requests.exceptions.ConnectionError:\n    print(f\"\
+    Cannot connect to {stack_url}. Check internet connection.\")\n```\n\n### Complete\
+    \ Authentication Troubleshooting Function\n\n```python\ndef troubleshoot_authentication(token,\
+    \ stack_url):\n    \"\"\"Complete authentication diagnostics.\"\"\"\n    print(\"\
+    === Keboola Authentication Troubleshooting ===\")\n    \n    # 1. Check token\
+    \ is set\n    if not token:\n        print(\"❌ No token provided\")\n        print(\"\
+    SOLUTION: Set KEBOOLA_TOKEN environment variable\")\n        return False\n  \
+    \  \n    print(f\"✓ Token is set (length: {len(token)})\")\n    \n    # 2. Check\
+    \ stack URL format\n    if not stack_url.startswith(('connection.', 'http')):\n\
+    \        print(f\"❌ Invalid stack URL format: {stack_url}\")\n        print(\"\
+    SOLUTION: Use format like 'connection.keboola.com'\")\n        return False\n\
+    \    \n    print(f\"✓ Stack URL format valid: {stack_url}\")\n    \n    # 3. Test\
+    \ connectivity\n    try:\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage\"\
+    ,\n            timeout=10\n        )\n        print(f\"✓ Can reach stack (status:\
+    \ {response.status_code})\")\n    except requests.exceptions.RequestException\
+    \ as e:\n        print(f\"❌ Cannot reach stack: {e}\")\n        print(\"SOLUTION:\
+    \ Check internet connection and firewall settings\")\n        return False\n \
+    \   \n    # 4. Verify token\n    try:\n        response = requests.get(\n    \
+    \        f\"https://{stack_url}/v2/storage/tokens/verify\",\n            headers={\"\
+    X-StorageApi-Token\": token},\n            timeout=10\n        )\n        response.raise_for_status()\n\
+    \        \n        token_info = response.json()\n        print(f\"✓ Token is valid\"\
+    )\n        print(f\"  Description: {token_info.get('description', 'N/A')}\")\n\
+    \        print(f\"  Can manage buckets: {token_info.get('canManageBuckets', False)}\"\
+    )\n        \n        expires = token_info.get('expires')\n        if expires:\n\
+    \            print(f\"  Expires: {expires}\")\n        else:\n            print(f\"\
+    \  Expires: Never\")\n        \n        return True\n        \n    except requests.exceptions.HTTPError\
+    \ as e:\n        if e.response.status_code == 401:\n            print(\"❌ Token\
+    \ is invalid (401 Unauthorized)\")\n            print(\"POSSIBLE CAUSES:\")\n\
+    \            print(\"  1. Token was deleted in Keboola UI\")\n            print(\"\
+    \  2. Token has expired\")\n            print(\"  3. Token is for different stack\"\
+    )\n            print(\"  4. Token contains typos or extra whitespace\")\n    \
+    \        print(\"SOLUTION: Create a new token in Keboola UI (Users & Settings\
+    \ → API Tokens)\")\n        else:\n            print(f\"❌ Unexpected error: {e.response.status_code}\"\
+    )\n        return False\n    except Exception as e:\n        print(f\"❌ Error\
+    \ verifying token: {e}\")\n        return False\n\n# Usage\nif not troubleshoot_authentication(token,\
+    \ stack_url):\n    sys.exit(1)\n```\n\n### Quick Reference: Authentication Error\
+    \ Codes\n\n| Error Code | Meaning | Common Cause | Solution |\n|------------|---------|--------------|----------|\n\
+    | 401 | Unauthorized | Invalid/expired token | Verify token, create new one if\
+    \ expired |\n| 403 | Forbidden | Insufficient permissions | Use token with write/manage\
+    \ permissions |\n| 404 | Not Found | Wrong stack URL or table doesn't exist |\
+    \ Verify stack URL and table ID |\n| 429 | Too Many Requests | Rate limit exceeded\
+    \ | Implement exponential backoff |\n| 500 | Server Error | Keboola platform issue\
+    \ | Retry with backoff, check status page |\n\n## Storage vs Workspace Context\n"
   format: markdown
 - source: 04-component-development.md
   content: "# Component Development\n\n## Overview\n\nKeboola components are Docker\
