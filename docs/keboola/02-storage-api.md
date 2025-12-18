@@ -669,3 +669,434 @@ response = requests.get(
     headers={"X-StorageApi-Token": storage_token}
 )
 ```
+
+## Batch Operations
+
+### Exporting Multiple Tables
+
+Keboola Storage API doesn't have a single "batch export" endpoint, but you can efficiently export multiple tables using concurrent async jobs:
+
+```python
+import requests
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def start_table_export(table_id):
+    """Start async export job for a table."""
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    return {
+        "table_id": table_id,
+        "job_id": response.json()["id"]
+    }
+
+def wait_for_export_job(job_info, timeout=300):
+    """Wait for export job and download result."""
+    job_id = job_info["job_id"]
+    table_id = job_info["table_id"]
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job = response.json()
+        
+        if job["status"] == "success":
+            file_url = job["results"]["file"]["url"]
+            data_response = requests.get(file_url)
+            
+            # Save to file with sanitized table name
+            filename = f"{table_id.replace('.', '_')}.csv"
+            with open(filename, "wb") as f:
+                f.write(data_response.content)
+            
+            return {
+                "table_id": table_id,
+                "filename": filename,
+                "status": "success"
+            }
+        
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            return {
+                "table_id": table_id,
+                "status": "failed",
+                "error": error_msg
+            }
+        
+        time.sleep(2)
+    
+    return {
+        "table_id": table_id,
+        "status": "timeout",
+        "error": f"Export did not complete within {timeout}s"
+    }
+
+def export_tables_batch(table_ids, max_workers=5):
+    """Export multiple tables concurrently.
+    
+    Args:
+        table_ids: List of table IDs to export
+        max_workers: Maximum concurrent export jobs (default: 5)
+    
+    Returns:
+        List of result dictionaries with status for each table
+    """
+    print(f"Starting batch export of {len(table_ids)} tables...")
+    
+    # Start all export jobs
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all export job starts
+        start_futures = {
+            executor.submit(start_table_export, table_id): table_id 
+            for table_id in table_ids
+        }
+        
+        job_infos = []
+        for future in as_completed(start_futures):
+            try:
+                job_info = future.result()
+                job_infos.append(job_info)
+                print(f"Started export job {job_info['job_id']} for {job_info['table_id']}")
+            except Exception as e:
+                table_id = start_futures[future]
+                print(f"Failed to start export for {table_id}: {e}")
+                job_infos.append({
+                    "table_id": table_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+        
+        # Wait for all jobs to complete
+        wait_futures = {
+            executor.submit(wait_for_export_job, job_info): job_info["table_id"]
+            for job_info in job_infos if "job_id" in job_info
+        }
+        
+        results = []
+        for future in as_completed(wait_futures):
+            try:
+                result = future.result()
+                results.append(result)
+                if result["status"] == "success":
+                    print(f"✓ Exported {result['table_id']} to {result['filename']}")
+                else:
+                    print(f"✗ Failed {result['table_id']}: {result.get('error', 'Unknown error')}")
+            except Exception as e:
+                table_id = wait_futures[future]
+                print(f"✗ Exception for {table_id}: {e}")
+                results.append({
+                    "table_id": table_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+    
+    # Summary
+    success_count = sum(1 for r in results if r["status"] == "success")
+    print(f"\nBatch export complete: {success_count}/{len(table_ids)} successful")
+    
+    return results
+
+# Usage example
+table_ids = [
+    "in.c-main.customers",
+    "in.c-main.orders",
+    "in.c-main.products",
+    "in.c-sales.transactions"
+]
+
+results = export_tables_batch(table_ids, max_workers=5)
+
+# Check for failures
+failed = [r for r in results if r["status"] != "success"]
+if failed:
+    print("\nFailed exports:")
+    for result in failed:
+        print(f"  {result['table_id']}: {result.get('error', 'Unknown')}")
+```
+
+### Batch Import Pattern
+
+Import multiple CSV files to different tables:
+
+```python
+import os
+import glob
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def import_table_file(table_id, csv_file):
+    """Import CSV file to existing table.
+    
+    Args:
+        table_id: Target table ID (e.g., 'in.c-main.customers')
+        csv_file: Path to CSV file
+    
+    Returns:
+        Dict with import status
+    """
+    try:
+        # Read CSV data
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            csv_data = f.read()
+        
+        # Start async import
+        response = requests.post(
+            f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+            headers={
+                "X-StorageApi-Token": token,
+                "Content-Type": "text/csv"
+            },
+            params={"dataString": csv_data}
+        )
+        response.raise_for_status()
+        job_id = response.json()["id"]
+        
+        # Poll for completion
+        timeout = 300
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            job_response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token}
+            )
+            job_response.raise_for_status()
+            job = job_response.json()
+            
+            if job["status"] == "success":
+                return {
+                    "table_id": table_id,
+                    "file": csv_file,
+                    "status": "success",
+                    "rows_imported": job.get("results", {}).get("importedRowsCount", 0)
+                }
+            
+            elif job["status"] in ["error", "cancelled", "terminated"]:
+                error_msg = job.get("error", {}).get("message", "Unknown error")
+                return {
+                    "table_id": table_id,
+                    "file": csv_file,
+                    "status": "failed",
+                    "error": error_msg
+                }
+            
+            time.sleep(2)
+        
+        return {
+            "table_id": table_id,
+            "file": csv_file,
+            "status": "timeout",
+            "error": "Import did not complete within timeout"
+        }
+    
+    except Exception as e:
+        return {
+            "table_id": table_id,
+            "file": csv_file,
+            "status": "failed",
+            "error": str(e)
+        }
+
+def batch_import_directory(import_mapping, max_workers=3):
+    """Import multiple CSV files to their respective tables.
+    
+    Args:
+        import_mapping: Dict mapping table IDs to CSV file paths
+            e.g., {"in.c-main.customers": "customers.csv"}
+        max_workers: Maximum concurrent imports (default: 3)
+    
+    Returns:
+        List of import results
+    """
+    print(f"Starting batch import of {len(import_mapping)} tables...")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(import_table_file, table_id, csv_file): table_id
+            for table_id, csv_file in import_mapping.items()
+        }
+        
+        results = []
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+            
+            if result["status"] == "success":
+                print(f"✓ Imported {result['rows_imported']} rows to {result['table_id']}")
+            else:
+                print(f"✗ Failed {result['table_id']}: {result.get('error', 'Unknown')}")
+    
+    success_count = sum(1 for r in results if r["status"] == "success")
+    print(f"\nBatch import complete: {success_count}/{len(import_mapping)} successful")
+    
+    return results
+
+# Usage example
+import_mapping = {
+    "in.c-main.customers": "data/customers.csv",
+    "in.c-main.orders": "data/orders.csv",
+    "in.c-main.products": "data/products.csv"
+}
+
+results = batch_import_directory(import_mapping, max_workers=3)
+```
+
+### Batch Operations for an Entire Bucket
+
+Export or import all tables in a bucket:
+
+```python
+def get_bucket_tables(bucket_id):
+    """Get list of all tables in a bucket."""
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/buckets/{bucket_id}/tables",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    return [table["id"] for table in response.json()]
+
+def export_entire_bucket(bucket_id, output_dir="./exports", max_workers=5):
+    """Export all tables from a bucket.
+    
+    Args:
+        bucket_id: Bucket ID (e.g., 'in.c-main')
+        output_dir: Directory to save exported files
+        max_workers: Maximum concurrent exports
+    
+    Returns:
+        List of export results
+    """
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get all tables in bucket
+    table_ids = get_bucket_tables(bucket_id)
+    print(f"Found {len(table_ids)} tables in bucket {bucket_id}")
+    
+    # Export all tables
+    return export_tables_batch(table_ids, max_workers=max_workers)
+
+# Usage
+results = export_entire_bucket("in.c-main", output_dir="./bucket_exports")
+```
+
+### Performance Considerations
+
+**Concurrency Limits**:
+- **Recommended**: 3-5 concurrent operations for imports, 5-10 for exports
+- **API Rate Limits**: ~30 requests/minute per token
+- **Job Slots**: Projects have limited concurrent job slots (typically 5-10)
+
+**Best Practices**:
+
+```python
+# ✓ GOOD: Limit concurrency to avoid overwhelming the API
+export_tables_batch(table_ids, max_workers=5)
+
+# ✗ BAD: Too many concurrent requests
+export_tables_batch(table_ids, max_workers=50)  # Will hit rate limits
+
+# ✓ GOOD: Use smaller batches for large operations
+def export_in_batches(table_ids, batch_size=10, max_workers=5):
+    """Export tables in smaller batches."""
+    results = []
+    for i in range(0, len(table_ids), batch_size):
+        batch = table_ids[i:i + batch_size]
+        print(f"Processing batch {i//batch_size + 1}/{(len(table_ids) + batch_size - 1)//batch_size}")
+        batch_results = export_tables_batch(batch, max_workers=max_workers)
+        results.extend(batch_results)
+        time.sleep(5)  # Pause between batches
+    return results
+
+# Usage for large bucket
+table_ids = get_bucket_tables("in.c-main")
+if len(table_ids) > 20:
+    results = export_in_batches(table_ids, batch_size=10, max_workers=5)
+else:
+    results = export_tables_batch(table_ids, max_workers=5)
+```
+
+**Memory Management**:
+
+```python
+# ✓ GOOD: Stream large files to disk
+def download_export_streaming(file_url, output_path):
+    """Download large export file with streaming."""
+    response = requests.get(file_url, stream=True)
+    response.raise_for_status()
+    
+    with open(output_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+# ✗ BAD: Load entire file into memory
+data_response = requests.get(file_url)
+content = data_response.content  # Entire file in memory
+```
+
+**Error Handling**:
+
+```python
+def robust_batch_export(table_ids, max_retries=2):
+    """Batch export with automatic retry for failures."""
+    results = export_tables_batch(table_ids)
+    
+    # Retry failed exports
+    for retry in range(max_retries):
+        failed_tables = [
+            r["table_id"] for r in results 
+            if r["status"] != "success"
+        ]
+        
+        if not failed_tables:
+            break
+        
+        print(f"\nRetry {retry + 1}/{max_retries} for {len(failed_tables)} failed tables")
+        time.sleep(10)  # Wait before retry
+        
+        retry_results = export_tables_batch(failed_tables)
+        
+        # Update results
+        for retry_result in retry_results:
+            for i, r in enumerate(results):
+                if r["table_id"] == retry_result["table_id"]:
+                    results[i] = retry_result
+                    break
+    
+    return results
+```
+
+**Monitoring Progress**:
+
+```python
+import json
+from datetime import datetime
+
+def export_with_logging(table_ids, log_file="export_log.json"):
+    """Export tables with detailed logging."""
+    start_time = datetime.now()
+    
+    results = export_tables_batch(table_ids)
+    
+    # Create detailed log
+    log_data = {
+        "start_time": start_time.isoformat(),
+        "end_time": datetime.now().isoformat(),
+        "total_tables": len(table_ids),
+        "successful": sum(1 for r in results if r["status"] == "success"),
+        "failed": sum(1 for r in results if r["status"] != "success"),
+        "results": results
+    }
+    
+    with open(log_file, 'w') as f:
+        json.dump(log_data, f, indent=2)
+    
+    print(f"\nLog saved to {log_file}")
+    return results
+```
