@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-18T09:55:36.876173
+> Generated: 2025-12-18T10:06:42.634276
 
 ---
 
@@ -360,6 +360,7 @@ response.raise_for_status()
 job_id = response.json()["id"]
 
 # Poll for completion with timeout
+# Note: This is CLIENT-SIDE timeout for polling, separate from job execution timeout
 timeout = 300  # 5 minutes
 start_time = time.time()
 
@@ -682,10 +683,13 @@ For exporting complete tables, especially large ones, use async export instead o
 ```python
 def export_large_table(table_id):
     """Export large table using async job (handles pagination internally)."""
-    # Start async export
+    # Start async export with custom timeout
     response = requests.post(
         f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
-        headers={"X-StorageApi-Token": token}
+        headers={"X-StorageApi-Token": token},
+        json={
+            "timeout": execution_timeout  # Job execution timeout
+        }
     )
     response.raise_for_status()
     job_id = response.json()["id"]
@@ -791,22 +795,32 @@ token = os.environ["KEBOOLA_TOKEN"]
 table_id = "in.c-main.customers"
 output_file = "customers.csv"
 
-def export_table_to_file(table_id, output_file, timeout=300):
-    """Export Keboola table to local CSV file."""
+def export_table_to_file(table_id, output_file, execution_timeout=3600, poll_timeout=300):
+    """Export Keboola table to local CSV file.
     
-    # Start async export
+    Args:
+        table_id: Keboola table ID (e.g., 'in.c-main.customers')
+        output_file: Local file path to save CSV
+        execution_timeout: Job execution timeout on server (default: 3600s/1h)
+        poll_timeout: Client polling timeout (default: 300s/5m)
+    """
+    
+    # Start async export with custom timeout
     response = requests.post(
         f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
-        headers={"X-StorageApi-Token": token}
+        headers={"X-StorageApi-Token": token},
+        json={
+            "timeout": execution_timeout  # Job execution timeout
+        }
     )
     response.raise_for_status()
     job_id = response.json()["id"]
     
     print(f"Export job started: {job_id}")
     
-    # Poll for completion
+    # Poll for completion (client-side polling timeout)
     start_time = time.time()
-    while time.time() - start_time < timeout:
+    while time.time() - start_time < poll_timeout:
         job_response = requests.get(
             f"https://{stack_url}/v2/storage/jobs/{job_id}",
             headers={"X-StorageApi-Token": token}
@@ -993,6 +1007,193 @@ response = requests.get(
     headers={"X-StorageApi-Token": storage_token}
 )
 ```
+
+## Job Timeouts
+
+### Understanding Job Timeouts
+
+Keboola jobs have execution timeouts to prevent runaway processes. There are two types of timeouts:
+
+1. **Job Execution Timeout**: How long the actual job can run on Keboola servers
+2. **Polling Timeout**: How long your client waits for job completion (client-side)
+
+### Default Timeout Values
+
+- **Default job execution timeout**: 3600 seconds (1 hour)
+- **Maximum job execution timeout**: 14400 seconds (4 hours)
+- **Recommended polling timeout**: 300-600 seconds (5-10 minutes) for typical jobs
+
+### Configuring Job Timeout
+
+Set custom timeout when creating async jobs:
+
+```python
+import requests
+import time
+
+# Export with custom 2-hour timeout
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token},
+    json={
+        "timeout": 7200  # 2 hours in seconds
+    }
+)
+response.raise_for_status()
+job_id = response.json()["id"]
+
+# Import with custom timeout
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+    headers={
+        "X-StorageApi-Token": token,
+        "Content-Type": "text/csv"
+    },
+    params={
+        "dataString": csv_data
+    },
+    json={
+        "timeout": 3600  # 1 hour
+    }
+)
+response.raise_for_status()
+job_id = response.json()["id"]
+```
+
+### What Happens When Timeout is Exceeded
+
+When a job exceeds its execution timeout:
+
+1. **Job Status**: Changes to `"terminated"`
+2. **Partial Results**: Not saved (job is rolled back)
+3. **Error Message**: `"Job exceeded maximum execution time"`
+4. **Retry Behavior**: Job does not auto-retry
+
+```python
+def wait_for_job_with_timeout_handling(job_id, poll_timeout=600):
+    """Wait for job with proper timeout error handling."""
+    start_time = time.time()
+    
+    while time.time() - start_time < poll_timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job = response.json()
+        
+        if job["status"] == "success":
+            return job
+        
+        elif job["status"] == "terminated":
+            error_msg = job.get("error", {}).get("message", "")
+            
+            if "exceeded maximum execution time" in error_msg.lower():
+                raise TimeoutError(
+                    f"Job {job_id} exceeded execution timeout. "
+                    f"Consider: 1) Increasing timeout parameter, "
+                    f"2) Reducing data volume, or 3) Optimizing query"
+                )
+            else:
+                raise Exception(f"Job terminated: {error_msg}")
+        
+        elif job["status"] in ["error", "cancelled"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job['status']}: {error_msg}")
+        
+        time.sleep(2)
+    
+    # Polling timeout (client-side) exceeded
+    raise TimeoutError(
+        f"Polling timeout: Job {job_id} still running after {poll_timeout}s. "
+        f"Job may still complete on server. Check status manually."
+    )
+```
+
+### Choosing the Right Timeout
+
+**For small tables (< 100K rows)**:
+```python
+timeout = 300  # 5 minutes
+```
+
+**For medium tables (100K - 1M rows)**:
+```python
+timeout = 1800  # 30 minutes
+```
+
+**For large tables (> 1M rows)**:
+```python
+timeout = 7200  # 2 hours
+```
+
+**For very large exports (> 10M rows)**:
+```python
+timeout = 14400  # 4 hours (maximum)
+```
+
+### Monitoring Long-Running Jobs
+
+For jobs with long timeouts, implement progress monitoring:
+
+```python
+import time
+from datetime import datetime, timedelta
+
+def wait_for_long_job(job_id, execution_timeout=7200, poll_interval=10):
+    """Wait for long-running job with progress updates."""
+    start_time = time.time()
+    last_update = start_time
+    
+    print(f"Job {job_id} started at {datetime.now().strftime('%H:%M:%S')}")
+    print(f"Execution timeout: {execution_timeout}s ({execution_timeout/3600:.1f}h)")
+    
+    while time.time() - start_time < execution_timeout + 60:  # Add buffer for polling
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job = response.json()
+        
+        # Progress update every 60 seconds
+        if time.time() - last_update > 60:
+            elapsed = int(time.time() - start_time)
+            print(f"Still running... {elapsed}s elapsed ({elapsed/60:.1f}m)")
+            last_update = time.time()
+        
+        if job["status"] == "success":
+            elapsed = int(time.time() - start_time)
+            print(f"Job completed in {elapsed}s ({elapsed/60:.1f}m)")
+            return job
+        
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job['status']}: {error_msg}")
+        
+        time.sleep(poll_interval)
+    
+    raise TimeoutError(f"Job did not complete within {execution_timeout}s")
+```
+
+### Best Practices
+
+**DO**:
+
+- Set execution timeout based on expected data volume
+- Use longer timeouts for large table exports (> 1M rows)
+- Monitor long-running jobs with progress updates
+- Handle `terminated` status separately from `error`
+- Add buffer to polling timeout (execution_timeout + 60s)
+- Log timeout values for debugging
+
+**DON'T**:
+
+- Use default timeout for large datasets (will fail)
+- Set timeout longer than 4 hours (API limit)
+- Confuse polling timeout with execution timeout
+- Retry terminated jobs without increasing timeout
+- Set extremely short timeouts (< 60s) - may fail on slow networks
 
 
 ---
@@ -1505,6 +1706,50 @@ response = requests.post(
 ```
 
 **Why**: Using the principle of least privilege improves security. Read-only tokens can't accidentally modify data, and bucket-specific tokens limit blast radius if compromised.
+
+## 11. Not Configuring Job Timeouts for Large Operations
+
+**Problem**: Long-running jobs fail with "terminated" status due to default timeout
+
+**Solution**: Configure appropriate timeout based on data volume:
+
+```python
+# ❌ WRONG - Using default timeout for large table export
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+# Fails after 1 hour for large tables
+
+# ✅ CORRECT - Set timeout for large operations
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token},
+    json={
+        "timeout": 7200  # 2 hours for large table
+    }
+)
+response.raise_for_status()
+job_id = response.json()["id"]
+
+# ✅ CORRECT - Handle timeout errors properly
+try:
+    job = wait_for_job(job_id)
+except Exception as e:
+    error_msg = str(e).lower()
+    if "exceeded maximum execution time" in error_msg or "terminated" in error_msg:
+        print("Job timed out. Increase timeout or reduce data volume.")
+        print(f"Current timeout: 3600s. Try: 7200s or 14400s (max)")
+    raise
+```
+
+**Rule of thumb**:
+- **< 100K rows**: 300s (5 min) - default is fine
+- **100K-1M rows**: 1800s (30 min)
+- **1M-10M rows**: 7200s (2 hours)
+- **> 10M rows**: 14400s (4 hours, maximum)
+
+**Why**: Default timeout (1 hour) is insufficient for large datasets. Jobs that exceed timeout are terminated with no partial results saved.
 
 
 ---
@@ -2606,7 +2851,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-18T09:55:36.876173",
+  "generated_at": "2025-12-18T10:06:42.634276",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

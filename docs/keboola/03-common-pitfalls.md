@@ -504,3 +504,47 @@ response = requests.post(
 ```
 
 **Why**: Using the principle of least privilege improves security. Read-only tokens can't accidentally modify data, and bucket-specific tokens limit blast radius if compromised.
+
+## 11. Not Configuring Job Timeouts for Large Operations
+
+**Problem**: Long-running jobs fail with "terminated" status due to default timeout
+
+**Solution**: Configure appropriate timeout based on data volume:
+
+```python
+# ❌ WRONG - Using default timeout for large table export
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token}
+)
+# Fails after 1 hour for large tables
+
+# ✅ CORRECT - Set timeout for large operations
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token},
+    json={
+        "timeout": 7200  # 2 hours for large table
+    }
+)
+response.raise_for_status()
+job_id = response.json()["id"]
+
+# ✅ CORRECT - Handle timeout errors properly
+try:
+    job = wait_for_job(job_id)
+except Exception as e:
+    error_msg = str(e).lower()
+    if "exceeded maximum execution time" in error_msg or "terminated" in error_msg:
+        print("Job timed out. Increase timeout or reduce data volume.")
+        print(f"Current timeout: 3600s. Try: 7200s or 14400s (max)")
+    raise
+```
+
+**Rule of thumb**:
+- **< 100K rows**: 300s (5 min) - default is fine
+- **100K-1M rows**: 1800s (30 min)
+- **1M-10M rows**: 7200s (2 hours)
+- **> 10M rows**: 14400s (4 hours, maximum)
+
+**Why**: Default timeout (1 hour) is insufficient for large datasets. Jobs that exceed timeout are terminated with no partial results saved.
