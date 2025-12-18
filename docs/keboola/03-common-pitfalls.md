@@ -104,34 +104,451 @@ validate_table_id("my_table")  # ✗ Raises ValueError
 
 **Problem**: Not handling API errors gracefully
 
-**Solution**: Always check response status:
+**Solution**: Implement comprehensive error handling patterns:
+
+### Basic Error Handling
 
 ```python
-def safe_api_call(url, headers):
+import requests
+import time
+import logging
+from typing import Optional, Dict, Any
+
+def safe_api_call(url: str, headers: Dict[str, str], timeout: int = 30) -> Optional[Dict[str, Any]]:
     """Make API call with proper error handling."""
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
-
         return response.json()
 
     except requests.exceptions.Timeout:
-        print("Request timed out")
+        logging.error(f"Request timed out after {timeout}s: {url}")
+        return None
+
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"Connection error: {e}")
         return None
 
     except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 401:
-            print("Invalid token")
-        elif e.response.status_code == 404:
-            print("Resource not found")
+        status_code = e.response.status_code
+        
+        if status_code == 401:
+            logging.error("Invalid or expired token")
+        elif status_code == 403:
+            logging.error("Insufficient permissions")
+        elif status_code == 404:
+            logging.error(f"Resource not found: {url}")
+        elif status_code == 429:
+            logging.error("Rate limit exceeded")
+        elif status_code >= 500:
+            logging.error(f"Server error ({status_code})")
         else:
-            print(f"HTTP error: {e}")
+            logging.error(f"HTTP error {status_code}: {e}")
+        
+        return None
+
+    except ValueError as e:
+        logging.error(f"Invalid JSON response: {e}")
         return None
 
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        logging.exception(f"Unexpected error: {e}")
         return None
 ```
+
+### Retry Logic with Exponential Backoff
+
+```python
+import time
+import random
+from typing import Optional, Callable, Any
+
+def retry_with_backoff(
+    func: Callable,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    max_delay: float = 60.0,
+    exponential_base: float = 2.0,
+    jitter: bool = True
+) -> Optional[Any]:
+    """Retry function with exponential backoff.
+    
+    Args:
+        func: Function to retry
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay between retries (seconds)
+        max_delay: Maximum delay between retries (seconds)
+        exponential_base: Base for exponential backoff calculation
+        jitter: Add random jitter to prevent thundering herd
+    
+    Returns:
+        Function result or None if all retries failed
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        
+        except requests.exceptions.HTTPError as e:
+            # Don't retry on client errors (4xx) except rate limiting
+            if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
+                logging.error(f"Client error {e.response.status_code}, not retrying")
+                raise
+            
+            if attempt == max_retries:
+                logging.error(f"Max retries ({max_retries}) exceeded")
+                raise
+            
+            # Calculate delay with exponential backoff
+            delay = min(initial_delay * (exponential_base ** attempt), max_delay)
+            
+            # Add jitter to prevent synchronized retries
+            if jitter:
+                delay = delay * (0.5 + random.random())
+            
+            logging.warning(
+                f"Attempt {attempt + 1}/{max_retries} failed: {e}. "
+                f"Retrying in {delay:.2f}s..."
+            )
+            time.sleep(delay)
+        
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt == max_retries:
+                logging.error(f"Max retries ({max_retries}) exceeded")
+                raise
+            
+            delay = min(initial_delay * (exponential_base ** attempt), max_delay)
+            if jitter:
+                delay = delay * (0.5 + random.random())
+            
+            logging.warning(f"Network error: {e}. Retrying in {delay:.2f}s...")
+            time.sleep(delay)
+    
+    return None
+
+# Usage example
+def make_api_call():
+    response = requests.get(
+        f"https://{stack_url}/v2/storage/tables/{table_id}",
+        headers={"X-StorageApi-Token": token},
+        timeout=30
+    )
+    response.raise_for_status()
+    return response.json()
+
+result = retry_with_backoff(make_api_call, max_retries=3)
+```
+
+### Job Polling with Error Handling
+
+```python
+import time
+from typing import Dict, Any, Optional
+
+class JobPollingError(Exception):
+    """Custom exception for job polling errors."""
+    pass
+
+class JobTimeoutError(JobPollingError):
+    """Job did not complete within timeout."""
+    pass
+
+class JobFailedError(JobPollingError):
+    """Job failed with error status."""
+    pass
+
+def poll_job_with_error_handling(
+    job_id: str,
+    timeout: int = 300,
+    poll_interval: int = 2,
+    max_poll_interval: int = 30
+) -> Dict[str, Any]:
+    """Poll job status with comprehensive error handling.
+    
+    Args:
+        job_id: Job ID to poll
+        timeout: Maximum time to wait (seconds)
+        poll_interval: Initial polling interval (seconds)
+        max_poll_interval: Maximum polling interval (seconds)
+    
+    Returns:
+        Job details dictionary
+    
+    Raises:
+        JobTimeoutError: If job doesn't complete within timeout
+        JobFailedError: If job fails with error status
+        requests.HTTPError: If API call fails
+    """
+    start_time = time.time()
+    current_interval = poll_interval
+    
+    while time.time() - start_time < timeout:
+        try:
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=30
+            )
+            response.raise_for_status()
+            job = response.json()
+            
+            status = job.get("status")
+            
+            # Success case
+            if status == "success":
+                elapsed = time.time() - start_time
+                logging.info(f"Job {job_id} completed successfully in {elapsed:.2f}s")
+                return job
+            
+            # Failure cases
+            if status in ["error", "cancelled", "terminated"]:
+                error_msg = job.get("error", {}).get("message", "Unknown error")
+                error_code = job.get("error", {}).get("code")
+                
+                raise JobFailedError(
+                    f"Job {job_id} failed with status '{status}': {error_msg} "
+                    f"(code: {error_code})"
+                )
+            
+            # Still processing
+            if status in ["waiting", "processing"]:
+                logging.debug(f"Job {job_id} status: {status}")
+            else:
+                logging.warning(f"Job {job_id} has unexpected status: {status}")
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Error polling job {job_id}: {e}. Retrying...")
+            # Continue polling despite temporary errors
+        
+        # Exponential backoff for polling interval
+        time.sleep(current_interval)
+        current_interval = min(current_interval * 1.5, max_poll_interval)
+        current_interval = int(current_interval)
+    
+    # Timeout reached
+    elapsed = time.time() - start_time
+    raise JobTimeoutError(
+        f"Job {job_id} did not complete within {timeout}s "
+        f"(elapsed: {elapsed:.2f}s)"
+    )
+
+# Usage example with error handling
+try:
+    # Start export job
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    # Poll with error handling
+    job = poll_job_with_error_handling(job_id, timeout=600)
+    
+    # Download result
+    file_url = job["results"]["file"]["url"]
+    data_response = requests.get(file_url, timeout=60)
+    data_response.raise_for_status()
+    
+    with open("export.csv", "wb") as f:
+        f.write(data_response.content)
+    
+except JobTimeoutError as e:
+    logging.error(f"Job timed out: {e}")
+    # Handle timeout: notify user, schedule retry, etc.
+    
+except JobFailedError as e:
+    logging.error(f"Job failed: {e}")
+    # Handle failure: check error message, alert, etc.
+    
+except requests.exceptions.HTTPError as e:
+    logging.error(f"API error: {e}")
+    # Handle API errors: check token, permissions, etc.
+```
+
+### Complete Error Handling Wrapper Class
+
+```python
+import requests
+import time
+import logging
+from typing import Optional, Dict, Any, List
+from dataclasses import dataclass
+
+@dataclass
+class APIConfig:
+    """Configuration for API client."""
+    stack_url: str
+    token: str
+    timeout: int = 30
+    max_retries: int = 3
+    initial_delay: float = 1.0
+
+class KeboolaAPIClient:
+    """Keboola Storage API client with comprehensive error handling."""
+    
+    def __init__(self, config: APIConfig):
+        self.config = config
+        self.base_url = f"https://{config.stack_url}"
+        self.headers = {
+            "X-StorageApi-Token": config.token,
+            "Content-Type": "application/json"
+        }
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+    
+    def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        **kwargs
+    ) -> Optional[requests.Response]:
+        """Make HTTP request with retry logic."""
+        url = f"{self.base_url}{endpoint}"
+        
+        def attempt_request():
+            response = self.session.request(
+                method=method,
+                url=url,
+                timeout=self.config.timeout,
+                **kwargs
+            )
+            response.raise_for_status()
+            return response
+        
+        try:
+            return retry_with_backoff(
+                attempt_request,
+                max_retries=self.config.max_retries,
+                initial_delay=self.config.initial_delay
+            )
+        except requests.exceptions.HTTPError as e:
+            self._handle_http_error(e)
+            raise
+    
+    def _handle_http_error(self, error: requests.exceptions.HTTPError):
+        """Log detailed error information."""
+        status_code = error.response.status_code
+        
+        try:
+            error_body = error.response.json()
+            error_msg = error_body.get("error", "Unknown error")
+            error_code = error_body.get("code")
+        except ValueError:
+            error_msg = error.response.text
+            error_code = None
+        
+        logging.error(
+            f"HTTP {status_code} error: {error_msg} "
+            f"(code: {error_code}, url: {error.response.url})"
+        )
+    
+    def get(self, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
+        """GET request with error handling."""
+        response = self._make_request("GET", endpoint, **kwargs)
+        return response.json() if response else None
+    
+    def post(self, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
+        """POST request with error handling."""
+        response = self._make_request("POST", endpoint, **kwargs)
+        return response.json() if response else None
+    
+    def list_tables(self) -> List[Dict[str, Any]]:
+        """List all tables with error handling."""
+        result = self.get("/v2/storage/tables")
+        return result if result else []
+    
+    def export_table(self, table_id: str, output_file: str) -> bool:
+        """Export table with complete error handling."""
+        try:
+            # Start export job
+            logging.info(f"Starting export for table {table_id}")
+            job_response = self.post(
+                f"/v2/storage/tables/{table_id}/export-async"
+            )
+            
+            if not job_response:
+                logging.error("Failed to start export job")
+                return False
+            
+            job_id = job_response["id"]
+            
+            # Poll for completion
+            job = poll_job_with_error_handling(job_id, timeout=600)
+            
+            # Download file
+            file_url = job["results"]["file"]["url"]
+            logging.info(f"Downloading export from {file_url}")
+            
+            response = requests.get(file_url, timeout=120)
+            response.raise_for_status()
+            
+            with open(output_file, "wb") as f:
+                f.write(response.content)
+            
+            logging.info(f"Table exported successfully to {output_file}")
+            return True
+        
+        except (JobTimeoutError, JobFailedError) as e:
+            logging.error(f"Export job error: {e}")
+            return False
+        
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Network error during export: {e}")
+            return False
+        
+        except Exception as e:
+            logging.exception(f"Unexpected error during export: {e}")
+            return False
+
+# Usage example
+config = APIConfig(
+    stack_url=os.environ["KEBOOLA_STACK_URL"],
+    token=os.environ["KEBOOLA_TOKEN"],
+    max_retries=3
+)
+
+client = KeboolaAPIClient(config)
+
+# List tables
+tables = client.list_tables()
+for table in tables:
+    print(f"Table: {table['id']}")
+
+# Export table
+success = client.export_table("in.c-main.customers", "customers.csv")
+if success:
+    print("Export completed successfully")
+else:
+    print("Export failed - check logs for details")
+```
+
+### Error Handling Best Practices Summary
+
+**DO**:
+
+- Use specific exception types (`HTTPError`, `Timeout`, `ConnectionError`)
+- Implement retry logic with exponential backoff
+- Log errors with context (URL, status code, error message)
+- Handle rate limiting (429) separately with longer delays
+- Set reasonable timeouts (30s for API calls, 120s for downloads)
+- Use custom exceptions for domain-specific errors (`JobFailedError`)
+- Add jitter to retry delays to prevent thundering herd
+- Return `None` or raise exceptions consistently
+- Validate responses before processing
+- Clean up resources (close files, sessions) in error cases
+
+**DON'T**:
+
+- Retry on client errors (4xx) except rate limiting (429)
+- Use bare `except` blocks without logging
+- Ignore timeout errors
+- Retry indefinitely without max attempts
+- Suppress errors silently
+- Return different types on success vs error
+- Use fixed retry delays (always use backoff)
+- Forget to handle network errors (`ConnectionError`)
+- Skip validation of JSON responses
+- Leave resources open after errors
 
 
 ## 3. Wrong HTTP Method for Async Endpoints
