@@ -446,11 +446,11 @@ jobs:
               issue_number: issueNumber
             });
 
-            const categoryLabel = issue.data.labels.find(l =>
-              ['incorrect-info', 'missing-info', 'outdated-docs', 'confusing-explanation'].includes(l.name)
-            );
-
-            const category = categoryLabel ? categoryLabel.name : 'incorrect-info';
+            // Find category label (format: category:xxx)
+            const categoryLabel = issue.data.labels.find(l => l.name.startsWith('category:'));
+            const category = categoryLabel
+              ? categoryLabel.name.replace('category:', '')
+              : 'outdated-docs';
 
             // Format suggestions as additional context
             const feedback = suggestions.length > 0

@@ -127,16 +127,19 @@ jobs:
                           content = f.read().lower()
                           if any(term in content for term in ['api', 'client', 'authentication', 'endpoint']):
                               target_files.append(str(file))
-              elif category == 'outdated-docs':
+              elif category == 'outdated-docs' or category == 'incorrect-info' or category == 'missing-info':
                   # All source docs might need updating
                   target_files = [str(f) for f in all_doc_files]
-              elif category == 'pitfall':
+              elif category == 'pitfall' or category == 'confusing-explanation':
                   # Look for files with "pitfall" or "common mistakes" sections
                   for file in all_doc_files:
                       with open(file, 'r', encoding='utf-8') as f:
                           content = f.read().lower()
                           if any(term in content for term in ['pitfall', 'common', 'mistake', 'avoid', 'error prevention']):
                               target_files.append(str(file))
+              else:
+                  # Default: include all docs for unknown categories
+                  target_files = [str(f) for f in all_doc_files]
 
           # Limit to top 5 most relevant files
           target_files = list(set(target_files))[:5]
