@@ -824,3 +824,104 @@ if not troubleshoot_authentication(token, stack_url):
 | 500 | Server Error | Keboola platform issue | Retry with backoff, check status page |
 
 ## Storage vs Workspace Context
+
+
+## 11. Exceeding Concurrent Job Limits in Batch Operations
+
+**Problem**: Starting too many async jobs simultaneously causes rate limiting or queuing
+
+**Solution**: Batch operations in groups to respect concurrency limits:
+
+```python
+# ❌ WRONG - Starting 50 jobs at once may hit limits
+table_ids = [f"in.c-data.table_{i}" for i in range(50)]
+jobs = []
+
+for table_id in table_ids:
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    jobs.append(response.json()["id"])
+# May hit rate limits or queue delays
+
+# ✅ CORRECT - Process in batches of 5-10
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def export_tables_batched(table_ids, batch_size=5):
+    results = {}
+    
+    for i in range(0, len(table_ids), batch_size):
+        batch = table_ids[i:i + batch_size]
+        print(f"Processing batch {i//batch_size + 1}: {len(batch)} tables")
+        
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            futures = {
+                executor.submit(export_single_table, tid): tid 
+                for tid in batch
+            }
+            
+            for future in as_completed(futures):
+                table_id = futures[future]
+                try:
+                    result = future.result()
+                    results[table_id] = result
+                except Exception as e:
+                    print(f"Failed {table_id}: {e}")
+        
+        # Small delay between batches
+        if i + batch_size < len(table_ids):
+            time.sleep(2)
+    
+    return results
+
+def export_single_table(table_id):
+    # Start export
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    # Wait for completion
+    return wait_for_job(job_id)
+
+# Usage
+results = export_tables_batched(table_ids, batch_size=5)
+```
+
+**Rule of thumb**:
+- **Default limit**: 10 concurrent jobs per project
+- **Recommended batch size**: 5-10 tables
+- **Add delays**: 2-5 seconds between batches
+- **Use ThreadPoolExecutor**: Control concurrency with `max_workers`
+
+**Why**: Keboola enforces per-project concurrency limits. Exceeding them causes jobs to queue (slower) or fail with rate limit errors. Batching ensures predictable performance.
+
+**Monitoring batch operations**:
+
+```python
+def monitor_batch_jobs(job_ids, stack_url, token):
+    """Monitor multiple jobs with progress indicator."""
+    completed = 0
+    total = len(job_ids)
+    
+    while job_ids:
+        time.sleep(3)
+        
+        for job_id in list(job_ids):
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token}
+            )
+            job = response.json()
+            
+            if job["status"] in ["success", "error", "cancelled"]:
+                completed += 1
+                job_ids.remove(job_id)
+                print(f"Progress: {completed}/{total} ({job['status']})")
+        
+        if job_ids:
+            print(f"Waiting for {len(job_ids)} remaining jobs...")
+```

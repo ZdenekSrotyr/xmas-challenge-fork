@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-18T10:08:02.317933
+> Generated: 2025-12-18T10:28:14.983216
 
 ---
 
@@ -994,6 +994,468 @@ response = requests.get(
 )
 ```
 
+## Batch Operations
+
+### Batch Export Multiple Tables
+
+Export multiple tables concurrently using async jobs:
+
+```python
+import requests
+import time
+import concurrent.futures
+from typing import List, Dict
+
+def start_table_export(table_id: str, stack_url: str, token: str) -> Dict:
+    """Start async export job for a single table."""
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    
+    job = response.json()
+    return {
+        "table_id": table_id,
+        "job_id": job["id"],
+        "status": "started"
+    }
+
+def wait_for_export_job(job_id: str, stack_url: str, token: str, timeout: int = 300) -> Dict:
+    """Poll export job until completion."""
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job = response.json()
+        
+        if job["status"] == "success":
+            return job
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job_id} failed: {error_msg}")
+        
+        time.sleep(2)
+    
+    raise TimeoutError(f"Job {job_id} timeout after {timeout}s")
+
+def download_export_file(job: Dict, output_path: str) -> str:
+    """Download exported file from completed job."""
+    file_url = job["results"]["file"]["url"]
+    response = requests.get(file_url)
+    response.raise_for_status()
+    
+    with open(output_path, "wb") as f:
+        f.write(response.content)
+    
+    return output_path
+
+def batch_export_tables(table_ids: List[str], stack_url: str, token: str, output_dir: str = "exports") -> Dict[str, str]:
+    """Export multiple tables in parallel.
+    
+    Args:
+        table_ids: List of table IDs to export (e.g., ['in.c-main.customers', 'in.c-main.orders'])
+        stack_url: Keboola stack URL
+        token: Storage API token
+        output_dir: Directory to save exported files
+    
+    Returns:
+        Dictionary mapping table_id to output file path
+    """
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Step 1: Start all export jobs
+    print(f"Starting export jobs for {len(table_ids)} tables...")
+    jobs = []
+    for table_id in table_ids:
+        try:
+            job = start_table_export(table_id, stack_url, token)
+            jobs.append(job)
+            print(f"  Started: {table_id} (job {job['job_id']})")
+        except Exception as e:
+            print(f"  Failed to start {table_id}: {e}")
+    
+    # Step 2: Wait for all jobs to complete
+    print(f"\nWaiting for {len(jobs)} jobs to complete...")
+    completed_jobs = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_job = {
+            executor.submit(wait_for_export_job, job["job_id"], stack_url, token): job
+            for job in jobs
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_job):
+            job_info = future_to_job[future]
+            try:
+                completed_job = future.result()
+                completed_jobs.append({
+                    "table_id": job_info["table_id"],
+                    "job": completed_job
+                })
+                print(f"  Completed: {job_info['table_id']}")
+            except Exception as e:
+                print(f"  Failed: {job_info['table_id']} - {e}")
+    
+    # Step 3: Download all files
+    print(f"\nDownloading {len(completed_jobs)} files...")
+    results = {}
+    
+    for item in completed_jobs:
+        table_id = item["table_id"]
+        job = item["job"]
+        
+        # Generate safe filename from table ID
+        filename = table_id.replace(".", "_") + ".csv"
+        output_path = os.path.join(output_dir, filename)
+        
+        try:
+            download_export_file(job, output_path)
+            results[table_id] = output_path
+            print(f"  Downloaded: {table_id} -> {output_path}")
+        except Exception as e:
+            print(f"  Download failed: {table_id} - {e}")
+    
+    return results
+
+# Usage example
+table_ids = [
+    "in.c-main.customers",
+    "in.c-main.orders",
+    "in.c-main.products",
+    "in.c-sales.transactions"
+]
+
+stack_url = os.environ["KEBOOLA_STACK_URL"]
+token = os.environ["KEBOOLA_TOKEN"]
+
+results = batch_export_tables(table_ids, stack_url, token, output_dir="./data")
+
+print(f"\nExport complete. Downloaded {len(results)} tables:")
+for table_id, path in results.items():
+    print(f"  {table_id}: {path}")
+```
+
+### Batch Import Multiple Tables
+
+Import multiple CSV files to different tables:
+
+```python
+import os
+import glob
+from typing import List, Dict
+
+def start_table_import(table_id: str, csv_path: str, stack_url: str, token: str, incremental: bool = False) -> Dict:
+    """Start async import job for a single table."""
+    with open(csv_path, "r", encoding="utf-8") as f:
+        csv_data = f.read()
+    
+    params = {"dataString": csv_data}
+    if incremental:
+        params["incremental"] = "1"
+    
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+        headers={
+            "X-StorageApi-Token": token,
+            "Content-Type": "text/csv"
+        },
+        params=params
+    )
+    response.raise_for_status()
+    
+    job = response.json()
+    return {
+        "table_id": table_id,
+        "csv_path": csv_path,
+        "job_id": job["id"],
+        "status": "started"
+    }
+
+def wait_for_import_job(job_id: str, stack_url: str, token: str, timeout: int = 300) -> Dict:
+    """Poll import job until completion."""
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/jobs/{job_id}",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job = response.json()
+        
+        if job["status"] == "success":
+            return job
+        elif job["status"] in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            raise Exception(f"Job {job_id} failed: {error_msg}")
+        
+        time.sleep(2)
+    
+    raise TimeoutError(f"Job {job_id} timeout after {timeout}s")
+
+def batch_import_tables(imports: List[Dict[str, str]], stack_url: str, token: str, incremental: bool = False) -> Dict[str, bool]:
+    """Import multiple CSV files to tables in parallel.
+    
+    Args:
+        imports: List of dicts with 'table_id' and 'csv_path' keys
+                 Example: [{'table_id': 'in.c-main.customers', 'csv_path': './customers.csv'}]
+        stack_url: Keboola stack URL
+        token: Storage API token
+        incremental: If True, perform incremental loads (requires primary keys)
+    
+    Returns:
+        Dictionary mapping table_id to success status (True/False)
+    """
+    # Step 1: Start all import jobs
+    print(f"Starting import jobs for {len(imports)} tables...")
+    jobs = []
+    
+    for item in imports:
+        table_id = item["table_id"]
+        csv_path = item["csv_path"]
+        
+        try:
+            job = start_table_import(table_id, csv_path, stack_url, token, incremental)
+            jobs.append(job)
+            print(f"  Started: {table_id} from {csv_path} (job {job['job_id']})")
+        except Exception as e:
+            print(f"  Failed to start {table_id}: {e}")
+    
+    # Step 2: Wait for all jobs to complete
+    print(f"\nWaiting for {len(jobs)} import jobs to complete...")
+    results = {}
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_job = {
+            executor.submit(wait_for_import_job, job["job_id"], stack_url, token): job
+            for job in jobs
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_job):
+            job_info = future_to_job[future]
+            table_id = job_info["table_id"]
+            
+            try:
+                completed_job = future.result()
+                results[table_id] = True
+                print(f"  Completed: {table_id}")
+            except Exception as e:
+                results[table_id] = False
+                print(f"  Failed: {table_id} - {e}")
+    
+    return results
+
+# Usage example 1: Import from directory
+imports = [
+    {"table_id": "in.c-main.customers", "csv_path": "./data/customers.csv"},
+    {"table_id": "in.c-main.orders", "csv_path": "./data/orders.csv"},
+    {"table_id": "in.c-main.products", "csv_path": "./data/products.csv"}
+]
+
+stack_url = os.environ["KEBOOLA_STACK_URL"]
+token = os.environ["KEBOOLA_TOKEN"]
+
+results = batch_import_tables(imports, stack_url, token, incremental=False)
+
+print(f"\nImport complete: {sum(results.values())}/{len(results)} succeeded")
+
+# Usage example 2: Auto-discover CSV files in directory
+def batch_import_from_directory(csv_dir: str, bucket_id: str, stack_url: str, token: str) -> Dict[str, bool]:
+    """Import all CSV files from directory to specified bucket.
+    
+    File names become table names (e.g., customers.csv -> in.c-main.customers)
+    """
+    imports = []
+    
+    for csv_path in glob.glob(os.path.join(csv_dir, "*.csv")):
+        filename = os.path.basename(csv_path)
+        table_name = os.path.splitext(filename)[0]  # Remove .csv extension
+        table_id = f"{bucket_id}.{table_name}"
+        
+        imports.append({
+            "table_id": table_id,
+            "csv_path": csv_path
+        })
+    
+    return batch_import_tables(imports, stack_url, token)
+
+# Usage
+results = batch_import_from_directory(
+    csv_dir="./exports",
+    bucket_id="in.c-main",
+    stack_url=stack_url,
+    token=token
+)
+```
+
+### Performance Considerations
+
+#### Concurrent Job Limits
+
+Keboola has per-project concurrency limits for async jobs:
+
+- **Default limit**: 10 concurrent jobs per project
+- **Recommended batch size**: 5-10 tables per batch
+- **Rate limiting**: Jobs are queued if limit exceeded
+
+```python
+def batch_export_with_limit(table_ids: List[str], stack_url: str, token: str, max_concurrent: int = 5):
+    """Export tables in batches to respect concurrency limits."""
+    results = {}
+    
+    # Process in batches
+    for i in range(0, len(table_ids), max_concurrent):
+        batch = table_ids[i:i + max_concurrent]
+        print(f"\nProcessing batch {i//max_concurrent + 1}: {len(batch)} tables")
+        
+        batch_results = batch_export_tables(batch, stack_url, token)
+        results.update(batch_results)
+        
+        # Optional: Add delay between batches
+        if i + max_concurrent < len(table_ids):
+            time.sleep(5)
+    
+    return results
+```
+
+#### Optimization Tips
+
+**1. Filter data at export time**:
+```python
+# Export only recent data
+from datetime import datetime, timedelta
+yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+
+response = requests.post(
+    f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+    headers={"X-StorageApi-Token": token},
+    params={
+        "changedSince": yesterday,  # Only rows modified since timestamp
+        "limit": 10000  # Limit number of rows
+    }
+)
+```
+
+**2. Use incremental imports**:
+```python
+# Faster imports when only adding/updating rows
+results = batch_import_tables(
+    imports,
+    stack_url,
+    token,
+    incremental=True  # Only updates changed rows
+)
+```
+
+**3. Monitor job progress**:
+```python
+def monitor_batch_progress(job_ids: List[str], stack_url: str, token: str):
+    """Monitor progress of multiple jobs."""
+    while job_ids:
+        time.sleep(5)
+        
+        for job_id in list(job_ids):
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token}
+            )
+            job = response.json()
+            
+            if job["status"] in ["success", "error", "cancelled"]:
+                print(f"Job {job_id}: {job['status']}")
+                job_ids.remove(job_id)
+        
+        if job_ids:
+            print(f"Waiting for {len(job_ids)} jobs...")
+```
+
+**4. Handle large files**:
+```python
+# For files > 100MB, use file upload API instead of dataString parameter
+def import_large_file(table_id: str, csv_path: str, stack_url: str, token: str):
+    """Import large CSV file via file upload."""
+    # Step 1: Upload file
+    with open(csv_path, "rb") as f:
+        upload_response = requests.post(
+            f"https://{stack_url}/v2/storage/files",
+            headers={"X-StorageApi-Token": token},
+            files={"file": f}
+        )
+    upload_response.raise_for_status()
+    file_id = upload_response.json()["id"]
+    
+    # Step 2: Import from uploaded file
+    import_response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/import-async",
+        headers={"X-StorageApi-Token": token},
+        json={"dataFileId": file_id}
+    )
+    import_response.raise_for_status()
+    
+    return import_response.json()["id"]
+```
+
+#### Performance Benchmarks
+
+**Typical export times** (on US stack):
+- Small table (< 10K rows): 5-10 seconds
+- Medium table (100K-1M rows): 30-60 seconds
+- Large table (> 1M rows): 2-5 minutes
+
+**Typical import times**:
+- Small file (< 1MB): 5-10 seconds
+- Medium file (10-100MB): 30-90 seconds
+- Large file (> 100MB): 2-10 minutes
+
+**Batch operation overhead**:
+- Starting 10 jobs: ~2-5 seconds
+- Polling overhead: ~1-2 seconds per job
+- Total batch (10 small tables): ~30-60 seconds
+
+### Error Handling in Batch Operations
+
+```python
+def batch_export_with_retry(table_ids: List[str], stack_url: str, token: str, max_retries: int = 3):
+    """Export tables with automatic retry on failure."""
+    results = {}
+    failed = []
+    
+    for table_id in table_ids:
+        for attempt in range(max_retries):
+            try:
+                job = start_table_export(table_id, stack_url, token)
+                completed_job = wait_for_export_job(job["job_id"], stack_url, token)
+                
+                # Download file
+                filename = table_id.replace(".", "_") + ".csv"
+                download_export_file(completed_job, filename)
+                
+                results[table_id] = filename
+                print(f"✓ {table_id}")
+                break
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"✗ {table_id} failed (attempt {attempt + 1}), retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"✗ {table_id} failed after {max_retries} attempts: {e}")
+                    failed.append(table_id)
+    
+    print(f"\nCompleted: {len(results)}/{len(table_ids)}")
+    if failed:
+        print(f"Failed: {failed}")
+    
+    return results, failed
+```
+
 
 ---
 
@@ -1825,6 +2287,107 @@ if not troubleshoot_authentication(token, stack_url):
 | 500 | Server Error | Keboola platform issue | Retry with backoff, check status page |
 
 ## Storage vs Workspace Context
+
+
+## 11. Exceeding Concurrent Job Limits in Batch Operations
+
+**Problem**: Starting too many async jobs simultaneously causes rate limiting or queuing
+
+**Solution**: Batch operations in groups to respect concurrency limits:
+
+```python
+# ❌ WRONG - Starting 50 jobs at once may hit limits
+table_ids = [f"in.c-data.table_{i}" for i in range(50)]
+jobs = []
+
+for table_id in table_ids:
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    jobs.append(response.json()["id"])
+# May hit rate limits or queue delays
+
+# ✅ CORRECT - Process in batches of 5-10
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def export_tables_batched(table_ids, batch_size=5):
+    results = {}
+    
+    for i in range(0, len(table_ids), batch_size):
+        batch = table_ids[i:i + batch_size]
+        print(f"Processing batch {i//batch_size + 1}: {len(batch)} tables")
+        
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            futures = {
+                executor.submit(export_single_table, tid): tid 
+                for tid in batch
+            }
+            
+            for future in as_completed(futures):
+                table_id = futures[future]
+                try:
+                    result = future.result()
+                    results[table_id] = result
+                except Exception as e:
+                    print(f"Failed {table_id}: {e}")
+        
+        # Small delay between batches
+        if i + batch_size < len(table_ids):
+            time.sleep(2)
+    
+    return results
+
+def export_single_table(table_id):
+    # Start export
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+    response.raise_for_status()
+    job_id = response.json()["id"]
+    
+    # Wait for completion
+    return wait_for_job(job_id)
+
+# Usage
+results = export_tables_batched(table_ids, batch_size=5)
+```
+
+**Rule of thumb**:
+- **Default limit**: 10 concurrent jobs per project
+- **Recommended batch size**: 5-10 tables
+- **Add delays**: 2-5 seconds between batches
+- **Use ThreadPoolExecutor**: Control concurrency with `max_workers`
+
+**Why**: Keboola enforces per-project concurrency limits. Exceeding them causes jobs to queue (slower) or fail with rate limit errors. Batching ensures predictable performance.
+
+**Monitoring batch operations**:
+
+```python
+def monitor_batch_jobs(job_ids, stack_url, token):
+    """Monitor multiple jobs with progress indicator."""
+    completed = 0
+    total = len(job_ids)
+    
+    while job_ids:
+        time.sleep(3)
+        
+        for job_id in list(job_ids):
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token}
+            )
+            job = response.json()
+            
+            if job["status"] in ["success", "error", "cancelled"]:
+                completed += 1
+                job_ids.remove(job_id)
+                print(f"Progress: {completed}/{total} ({job['status']})")
+        
+        if job_ids:
+            print(f"Waiting for {len(job_ids)} remaining jobs...")
+```
 
 
 ---
@@ -2926,7 +3489,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-18T10:08:02.317933",
+  "generated_at": "2025-12-18T10:28:14.983216",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
