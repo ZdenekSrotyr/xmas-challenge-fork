@@ -16,33 +16,187 @@ stack_url = os.environ.get("KEBOOLA_STACK_URL", "connection.keboola.com")
 
 ## 2. Not Handling Job Polling
 
-**Problem**: Assuming async operations complete immediately
+**Problem**: Polling async jobs incorrectly - too frequently, without proper timeout/error handling, or without cleanup
 
-**Solution**: Always poll until job finishes:
+**Common Mistakes**:
+- Polling too frequently (every 100ms) → Gets account rate-limited/banned
+- Not handling all error states → Jobs fail silently
+- Missing timeout logic → Scripts hang forever
+- Not cleaning up failed jobs → Resource leaks
+
+**Solution**: Poll with appropriate interval, handle all states, and clean up:
 
 ```python
-def wait_for_job(job_id, timeout=300):
-    """Wait for job completion with timeout."""
-    start = time.time()
+import time
+import requests
 
-    while time.time() - start < timeout:
+def wait_for_job(job_id, timeout=300, poll_interval=2):
+    """Wait for job completion with proper polling and error handling.
+    
+    Args:
+        job_id: Keboola job ID
+        timeout: Maximum wait time in seconds (default 5 minutes)
+        poll_interval: Seconds between status checks (minimum 2 seconds)
+    
+    Returns:
+        Job result dict on success
+    
+    Raises:
+        TimeoutError: Job didn't complete within timeout
+        Exception: Job failed with error
+    """
+    # Enforce minimum poll interval to avoid rate limiting
+    if poll_interval < 2:
+        raise ValueError("poll_interval must be at least 2 seconds to avoid rate limits")
+    
+    start_time = time.time()
+    attempts = 0
+    
+    while time.time() - start_time < timeout:
+        attempts += 1
+        
+        try:
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=10  # Request timeout
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            # Network error - retry with backoff
+            print(f"Request failed (attempt {attempts}): {e}")
+            time.sleep(min(poll_interval * 2, 10))
+            continue
+        
+        job = response.json()
+        status = job["status"]
+        
+        # SUCCESS: Job completed successfully
+        if status == "success":
+            print(f"Job {job_id} completed successfully after {attempts} checks")
+            return job
+        
+        # ERROR STATES: Job failed, was cancelled, or terminated
+        elif status in ["error", "cancelled", "terminated"]:
+            error_msg = job.get("error", {}).get("message", "Unknown error")
+            error_type = job.get("error", {}).get("type", "unknown")
+            
+            # Log full error details
+            print(f"Job {job_id} failed:")
+            print(f"  Status: {status}")
+            print(f"  Error Type: {error_type}")
+            print(f"  Message: {error_msg}")
+            
+            raise Exception(
+                f"Job {job_id} failed with status '{status}': {error_msg}"
+            )
+        
+        # PROCESSING: Job still running (waiting, processing)
+        elif status in ["waiting", "processing"]:
+            elapsed = time.time() - start_time
+            print(f"Job {job_id} status: {status} (elapsed: {elapsed:.1f}s)")
+            time.sleep(poll_interval)
+        
+        # UNKNOWN STATE: Unexpected status
+        else:
+            print(f"Warning: Unknown job status '{status}' for job {job_id}")
+            time.sleep(poll_interval)
+    
+    # TIMEOUT: Job didn't complete in time
+    elapsed = time.time() - start_time
+    raise TimeoutError(
+        f"Job {job_id} did not complete within {timeout}s "
+        f"(checked {attempts} times over {elapsed:.1f}s)"
+    )
+
+
+# Example usage with proper cleanup
+def export_table_safe(table_id):
+    """Export table with proper job polling and cleanup."""
+    job_id = None
+    
+    try:
+        # Start async export
+        response = requests.post(
+            f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+            headers={"X-StorageApi-Token": token}
+        )
+        response.raise_for_status()
+        job_id = response.json()["id"]
+        
+        # Wait with proper polling (2-second intervals)
+        job = wait_for_job(job_id, timeout=600, poll_interval=2)
+        
+        # Download result
+        file_url = job["results"]["file"]["url"]
+        data_response = requests.get(file_url)
+        return data_response.content
+        
+    except TimeoutError as e:
+        print(f"Export timed out: {e}")
+        # Job might still be running - log for manual cleanup
+        if job_id:
+            print(f"Job ID for cleanup: {job_id}")
+        raise
+        
+    except Exception as e:
+        print(f"Export failed: {e}")
+        # Job failed or was cancelled - already logged
+        raise
+```
+
+**Real-World Example: Rate Limiting**
+
+```python
+# ❌ WRONG - Polls every 100ms, will get banned
+def poll_too_fast(job_id):
+    while True:
         response = requests.get(
             f"https://{stack_url}/v2/storage/jobs/{job_id}",
             headers={"X-StorageApi-Token": token}
         )
-        response.raise_for_status()
+        if response.json()["status"] == "success":
+            return response.json()
+        time.sleep(0.1)  # 100ms = 10 requests/second!
 
-        job = response.json()
+# ✅ CORRECT - Polls every 2 seconds (safe rate)
+def poll_correctly(job_id):
+    return wait_for_job(job_id, poll_interval=2)
+```
 
-        if job["status"] == "success":
-            return job
-        elif job["status"] in ["error", "cancelled", "terminated"]:
-            error_msg = job.get("error", {}).get("message", "Unknown error")
-            raise Exception(f"Job failed with status {job['status']}: {error_msg}")
+**Polling Interval Guidelines**:
 
-        time.sleep(2)
+| Job Type | Typical Duration | Recommended Interval |
+|----------|------------------|---------------------|
+| Table export (small) | 5-30 seconds | 2 seconds |
+| Table export (large) | 1-10 minutes | 3-5 seconds |
+| Table import | 10-60 seconds | 2-3 seconds |
+| Transformation | 30-300 seconds | 5 seconds |
 
-    raise TimeoutError(f"Job {job_id} did not complete in {timeout}s")
+**Why 2 seconds minimum?**
+- Keboola rate limits: ~30 requests/minute per token
+- Polling every 2 seconds = 30 requests/minute (safe)
+- Polling every 100ms = 600 requests/minute (banned)
+
+**Error States to Handle**:
+
+```python
+SUCCESS_STATES = ["success"]
+ERROR_STATES = ["error", "cancelled", "terminated"]
+PROCESSING_STATES = ["waiting", "processing"]
+
+# Always check for ALL error states
+if job["status"] in ERROR_STATES:
+    # Extract detailed error information
+    error_details = job.get("error", {})
+    error_message = error_details.get("message", "Unknown error")
+    error_type = error_details.get("type", "unknown")
+    
+    # Log for debugging
+    logging.error(f"Job {job_id} failed: {error_type} - {error_message}")
+    
+    raise Exception(f"Job failed: {error_message}")
+```
 ```
 
 ## 3. Ignoring Rate Limits
