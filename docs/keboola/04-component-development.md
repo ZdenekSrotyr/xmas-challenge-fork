@@ -275,28 +275,171 @@ Follow Keboola's error handling conventions:
 - **Exit code 2**: System errors (unhandled exceptions, application errors)
 
 ```python
-try:
-    # Component logic
-    validate_inputs(params)
-    result = perform_operation()
+import sys
+import logging
+import traceback
+from typing import Dict, Any
+import requests
 
-except ValueError as err:
-    # User-fixable errors
-    logging.error(f"Configuration error: {err}")
-    print(err, file=sys.stderr)
-    sys.exit(1)
+class UserException(Exception):
+    """User-fixable configuration or input error."""
+    pass
 
-except requests.HTTPError as err:
-    # API errors
-    logging.error(f"API request failed: {err}")
-    print(f"Failed to connect to API: {err.response.status_code}", file=sys.stderr)
-    sys.exit(1)
+class ComponentException(Exception):
+    """Component execution error."""
+    pass
 
-except Exception as err:
-    # Unhandled exceptions
-    logging.exception("Unhandled error in component execution")
-    traceback.print_exc(file=sys.stderr)
-    sys.exit(2)
+def validate_api_response(response: requests.Response) -> Dict[str, Any]:
+    """Validate API response and raise appropriate errors."""
+    try:
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        
+        try:
+            error_data = e.response.json()
+            error_msg = error_data.get('error', error_data.get('message', str(error_data)))
+        except Exception:
+            error_msg = e.response.text or f"HTTP {status_code}"
+        
+        # User errors - configuration issues
+        if status_code in [400, 401, 403, 404, 422]:
+            if status_code == 401:
+                raise UserException(f"Authentication failed: {error_msg}. Check your API token.")
+            elif status_code == 404:
+                raise UserException(f"Resource not found: {error_msg}. Verify table/bucket ID.")
+            else:
+                raise UserException(f"Invalid request: {error_msg}")
+        
+        # System errors - API or network issues
+        else:
+            raise ComponentException(f"API error ({status_code}): {error_msg}")
+    
+    except requests.exceptions.Timeout:
+        raise ComponentException("API request timed out. Try again later.")
+    
+    except requests.exceptions.ConnectionError as e:
+        raise ComponentException(f"Connection failed: {str(e)}")
+    
+    except requests.exceptions.RequestException as e:
+        raise ComponentException(f"Request failed: {str(e)}")
+
+def run_component():
+    """Component main execution with proper error handling."""
+    try:
+        # Validate configuration
+        params = load_configuration()
+        validate_configuration(params)
+        
+        # Make API calls with validation
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables",
+            headers={"X-StorageApi-Token": params['#api_key']},
+            timeout=30
+        )
+        data = validate_api_response(response)
+        
+        # Process data
+        result = process_data(data)
+        
+        # Write output
+        write_output(result)
+        
+        logging.info("Component execution completed successfully")
+        sys.exit(0)
+    
+    except UserException as err:
+        # User-fixable errors (exit code 1)
+        logging.error(f"Configuration error: {err}")
+        print(f"ERROR: {err}", file=sys.stderr)
+        print("\nPlease check your configuration and try again.", file=sys.stderr)
+        sys.exit(1)
+    
+    except ComponentException as err:
+        # Component/API errors (exit code 2)
+        logging.error(f"Component error: {err}")
+        print(f"ERROR: {err}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(2)
+    
+    except Exception as err:
+        # Unhandled exceptions (exit code 2)
+        logging.exception("Unhandled error in component execution")
+        print(f"FATAL ERROR: {err}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(2)
+
+if __name__ == '__main__':
+    run_component()
+```
+
+**Error Handling Pattern for Job Polling**:
+
+```python
+def wait_for_job_with_error_handling(job_id: str, timeout: int = 300) -> Dict[str, Any]:
+    """Wait for async job with comprehensive error handling."""
+    start_time = time.time()
+    retry_count = 0
+    max_retries = 3
+    
+    while time.time() - start_time < timeout:
+        try:
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=15
+            )
+            job = validate_api_response(response)
+            
+            if job["status"] == "success":
+                logging.info(f"Job {job_id} completed successfully")
+                return job
+            
+            elif job["status"] in ["error", "cancelled", "terminated"]:
+                error_msg = job.get("error", {}).get("message", "Unknown error")
+                raise ComponentException(
+                    f"Job {job_id} failed with status '{job['status']}': {error_msg}"
+                )
+            
+            # Reset retry counter on successful status check
+            retry_count = 0
+            time.sleep(2)
+        
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            retry_count += 1
+            if retry_count >= max_retries:
+                raise ComponentException(
+                    f"Failed to check job status after {max_retries} retries: {str(e)}"
+                )
+            
+            logging.warning(f"Error checking job status (retry {retry_count}/{max_retries}): {e}")
+            time.sleep(5 * retry_count)  # Exponential backoff
+    
+    raise ComponentException(f"Job {job_id} did not complete within {timeout}s")
+```
+
+**Logging Best Practices**:
+
+```python
+import logging
+
+# Configure logging at component start
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('/data/out/component.log')
+    ]
+)
+
+# Log at appropriate levels
+logging.debug("Detailed debug information")  # Not shown in production
+logging.info("Component started processing")  # Normal operations
+logging.warning("Rate limited, retrying...")  # Recoverable issues
+logging.error("Failed to connect to API")     # Errors
+logging.exception("Unhandled exception")      # Errors with stack trace
 ```
 
 ## Local Development

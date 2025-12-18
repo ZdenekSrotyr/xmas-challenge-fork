@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-18T09:55:36.876173
+> Generated: 2025-12-18T10:01:38.749217
 
 ---
 
@@ -995,6 +995,97 @@ response = requests.get(
 ```
 
 
+### Error Handling During Export
+
+Always wrap export operations in try-except blocks:
+
+```python
+import logging
+from typing import Optional
+
+def safe_export_table(table_id: str, output_file: str, timeout: int = 300) -> Optional[str]:
+    """Export table with comprehensive error handling.
+    
+    Returns:
+        Path to exported file on success, None on failure
+    """
+    try:
+        # Start export job
+        response = requests.post(
+            f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+            headers={"X-StorageApi-Token": token},
+            timeout=30
+        )
+        response.raise_for_status()
+        job_id = response.json()["id"]
+        
+        logging.info(f"Export job started: {job_id}")
+        
+        # Poll with timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                job_response = requests.get(
+                    f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                    headers={"X-StorageApi-Token": token},
+                    timeout=15
+                )
+                job_response.raise_for_status()
+                job = job_response.json()
+                
+                if job["status"] == "success":
+                    file_url = job["results"]["file"]["url"]
+                    
+                    # Download file
+                    data_response = requests.get(file_url, timeout=60)
+                    data_response.raise_for_status()
+                    
+                    with open(output_file, "wb") as f:
+                        f.write(data_response.content)
+                    
+                    logging.info(f"Table exported to {output_file}")
+                    return output_file
+                
+                elif job["status"] in ["error", "cancelled", "terminated"]:
+                    error_msg = job.get("error", {}).get("message", "Unknown error")
+                    logging.error(f"Export job {job['status']}: {error_msg}")
+                    return None
+                
+                time.sleep(2)
+            
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Error checking job status: {e}")
+                time.sleep(5)  # Wait longer before retry
+        
+        logging.error(f"Export job {job_id} timed out after {timeout}s")
+        return None
+    
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            logging.error("Authentication failed - invalid token")
+        elif e.response.status_code == 404:
+            logging.error(f"Table {table_id} not found")
+        else:
+            logging.error(f"HTTP error during export: {e}")
+        return None
+    
+    except requests.exceptions.Timeout:
+        logging.error("Request timed out")
+        return None
+    
+    except Exception as e:
+        logging.exception(f"Unexpected error during export: {e}")
+        return None
+
+# Usage
+result = safe_export_table("in.c-main.customers", "customers.csv")
+if result:
+    print(f"Success: {result}")
+else:
+    print("Export failed - check logs")
+```
+
+
 ---
 
 <!-- Source: 03-common-pitfalls.md -->
@@ -1105,34 +1196,272 @@ validate_table_id("my_table")  # ✗ Raises ValueError
 
 **Problem**: Not handling API errors gracefully
 
-**Solution**: Always check response status:
+**Solution**: Implement comprehensive error handling with retries and structured responses:
 
 ```python
-def safe_api_call(url, headers):
-    """Make API call with proper error handling."""
+import time
+import logging
+from typing import Optional, Dict, Any
+from requests.exceptions import HTTPError, ConnectionError, Timeout, RequestException
+
+class KeboolaAPIError(Exception):
+    """Base exception for Keboola API errors."""
+    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[Dict] = None):
+        self.message = message
+        self.status_code = status_code
+        self.response = response
+        super().__init__(self.message)
+
+class KeboolaAuthError(KeboolaAPIError):
+    """Authentication failed (401)."""
+    pass
+
+class KeboolaNotFoundError(KeboolaAPIError):
+    """Resource not found (404)."""
+    pass
+
+class KeboolaRateLimitError(KeboolaAPIError):
+    """Rate limit exceeded (429)."""
+    pass
+
+class KeboolaValidationError(KeboolaAPIError):
+    """Invalid request data (400, 422)."""
+    pass
+
+def parse_error_response(response) -> str:
+    """Extract error message from Keboola API response."""
     try:
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
+        error_data = response.json()
+        # Keboola API error format
+        if 'error' in error_data:
+            return error_data['error']
+        if 'message' in error_data:
+            return error_data['message']
+        return str(error_data)
+    except Exception:
+        return response.text or f"HTTP {response.status_code}"
 
-        return response.json()
+def api_call_with_retry(
+    url: str,
+    headers: Dict[str, str],
+    method: str = 'GET',
+    max_retries: int = 3,
+    timeout: int = 30,
+    **kwargs
+) -> Dict[str, Any]:
+    """Make API call with exponential backoff retry logic.
+    
+    Args:
+        url: API endpoint URL
+        headers: Request headers (must include X-StorageApi-Token)
+        method: HTTP method (GET, POST, etc.)
+        max_retries: Maximum number of retry attempts
+        timeout: Request timeout in seconds
+        **kwargs: Additional arguments passed to requests
+    
+    Returns:
+        Parsed JSON response
+    
+    Raises:
+        KeboolaAuthError: Authentication failed
+        KeboolaNotFoundError: Resource not found
+        KeboolaRateLimitError: Rate limit exceeded after retries
+        KeboolaValidationError: Invalid request data
+        KeboolaAPIError: Other API errors
+    """
+    import requests
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=headers,
+                timeout=timeout,
+                **kwargs
+            )
+            response.raise_for_status()
+            return response.json()
 
-    except requests.exceptions.Timeout:
-        print("Request timed out")
-        return None
+        except Timeout:
+            logging.warning(f"Request timeout (attempt {attempt + 1}/{max_retries})")
+            if attempt == max_retries - 1:
+                raise KeboolaAPIError(
+                    f"Request timed out after {max_retries} attempts",
+                    response=None
+                )
+            time.sleep(2 ** attempt)
 
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 401:
-            print("Invalid token")
-        elif e.response.status_code == 404:
-            print("Resource not found")
-        else:
-            print(f"HTTP error: {e}")
-        return None
+        except ConnectionError as e:
+            logging.warning(f"Connection error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                raise KeboolaAPIError(
+                    f"Connection failed after {max_retries} attempts: {str(e)}",
+                    response=None
+                )
+            time.sleep(2 ** attempt)
 
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        return None
+        except HTTPError as e:
+            error_msg = parse_error_response(e.response)
+            status_code = e.response.status_code
+
+            # Don't retry client errors (except rate limit)
+            if status_code == 401:
+                raise KeboolaAuthError(
+                    f"Authentication failed: {error_msg}",
+                    status_code=status_code,
+                    response=e.response.json() if e.response.content else None
+                )
+            
+            elif status_code == 404:
+                raise KeboolaNotFoundError(
+                    f"Resource not found: {error_msg}",
+                    status_code=status_code,
+                    response=e.response.json() if e.response.content else None
+                )
+            
+            elif status_code in [400, 422]:
+                raise KeboolaValidationError(
+                    f"Invalid request: {error_msg}",
+                    status_code=status_code,
+                    response=e.response.json() if e.response.content else None
+                )
+            
+            elif status_code == 429:
+                # Rate limited - retry with exponential backoff
+                wait_time = 2 ** attempt
+                logging.warning(f"Rate limited. Waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    raise KeboolaRateLimitError(
+                        f"Rate limit exceeded after {max_retries} attempts",
+                        status_code=status_code,
+                        response=e.response.json() if e.response.content else None
+                    )
+                time.sleep(wait_time)
+            
+            elif status_code >= 500:
+                # Server error - retry
+                wait_time = 2 ** attempt
+                logging.warning(f"Server error {status_code}. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    raise KeboolaAPIError(
+                        f"Server error after {max_retries} attempts: {error_msg}",
+                        status_code=status_code,
+                        response=e.response.json() if e.response.content else None
+                    )
+                time.sleep(wait_time)
+            
+            else:
+                # Other HTTP errors - don't retry
+                raise KeboolaAPIError(
+                    f"HTTP {status_code}: {error_msg}",
+                    status_code=status_code,
+                    response=e.response.json() if e.response.content else None
+                )
+
+        except RequestException as e:
+            logging.error(f"Request failed (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                raise KeboolaAPIError(
+                    f"Request failed after {max_retries} attempts: {str(e)}",
+                    response=None
+                )
+            time.sleep(2 ** attempt)
+
+    raise KeboolaAPIError("Max retries exceeded", response=None)
+
+# Usage examples
+def get_table_info(table_id: str) -> Dict[str, Any]:
+    """Get table information with error handling."""
+    try:
+        return api_call_with_retry(
+            url=f"https://{stack_url}/v2/storage/tables/{table_id}",
+            headers={"X-StorageApi-Token": token},
+            method='GET',
+            max_retries=3,
+            timeout=30
+        )
+    except KeboolaNotFoundError:
+        logging.error(f"Table {table_id} does not exist")
+        raise
+    except KeboolaAuthError:
+        logging.error("Invalid or expired token")
+        raise
+    except KeboolaAPIError as e:
+        logging.error(f"Failed to get table info: {e.message}")
+        raise
+
+def export_table_with_error_handling(table_id: str) -> str:
+    """Export table with comprehensive error handling."""
+    try:
+        # Start export job
+        job_response = api_call_with_retry(
+            url=f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+            headers={"X-StorageApi-Token": token},
+            method='POST',
+            max_retries=3,
+            timeout=30
+        )
+        job_id = job_response["id"]
+        
+        # Poll for completion
+        timeout = 300
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                job = api_call_with_retry(
+                    url=f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                    headers={"X-StorageApi-Token": token},
+                    method='GET',
+                    max_retries=2,  # Fewer retries for polling
+                    timeout=15
+                )
+                
+                if job["status"] == "success":
+                    file_url = job["results"]["file"]["url"]
+                    return file_url
+                
+                elif job["status"] in ["error", "cancelled", "terminated"]:
+                    error_msg = job.get("error", {}).get("message", "Unknown error")
+                    raise KeboolaAPIError(
+                        f"Export job failed: {error_msg}",
+                        response=job
+                    )
+                
+                time.sleep(2)
+            
+            except KeboolaAPIError as e:
+                # If job status check fails, re-raise
+                logging.error(f"Failed to check job status: {e.message}")
+                raise
+        
+        raise KeboolaAPIError(f"Export job {job_id} timed out after {timeout}s")
+    
+    except KeboolaNotFoundError:
+        logging.error(f"Table {table_id} not found")
+        raise
+    except KeboolaAuthError:
+        logging.error("Authentication failed - check your token")
+        raise
+    except KeboolaValidationError as e:
+        logging.error(f"Invalid export request: {e.message}")
+        raise
+    except KeboolaAPIError as e:
+        logging.error(f"Export failed: {e.message}")
+        raise
 ```
+
+**Error Handling Best Practices**:
+
+1. **Use custom exceptions** for different error types
+2. **Retry transient errors** (timeouts, rate limits, 5xx)
+3. **Don't retry client errors** (401, 404, 400)
+4. **Parse error responses** to get meaningful messages
+5. **Log errors** with appropriate severity
+6. **Set timeouts** on all requests
+7. **Implement exponential backoff** for retries
+8. **Handle job polling errors** separately from API errors
 
 
 ## 3. Wrong HTTP Method for Async Endpoints
@@ -1788,28 +2117,171 @@ Follow Keboola's error handling conventions:
 - **Exit code 2**: System errors (unhandled exceptions, application errors)
 
 ```python
-try:
-    # Component logic
-    validate_inputs(params)
-    result = perform_operation()
+import sys
+import logging
+import traceback
+from typing import Dict, Any
+import requests
 
-except ValueError as err:
-    # User-fixable errors
-    logging.error(f"Configuration error: {err}")
-    print(err, file=sys.stderr)
-    sys.exit(1)
+class UserException(Exception):
+    """User-fixable configuration or input error."""
+    pass
 
-except requests.HTTPError as err:
-    # API errors
-    logging.error(f"API request failed: {err}")
-    print(f"Failed to connect to API: {err.response.status_code}", file=sys.stderr)
-    sys.exit(1)
+class ComponentException(Exception):
+    """Component execution error."""
+    pass
 
-except Exception as err:
-    # Unhandled exceptions
-    logging.exception("Unhandled error in component execution")
-    traceback.print_exc(file=sys.stderr)
-    sys.exit(2)
+def validate_api_response(response: requests.Response) -> Dict[str, Any]:
+    """Validate API response and raise appropriate errors."""
+    try:
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code
+        
+        try:
+            error_data = e.response.json()
+            error_msg = error_data.get('error', error_data.get('message', str(error_data)))
+        except Exception:
+            error_msg = e.response.text or f"HTTP {status_code}"
+        
+        # User errors - configuration issues
+        if status_code in [400, 401, 403, 404, 422]:
+            if status_code == 401:
+                raise UserException(f"Authentication failed: {error_msg}. Check your API token.")
+            elif status_code == 404:
+                raise UserException(f"Resource not found: {error_msg}. Verify table/bucket ID.")
+            else:
+                raise UserException(f"Invalid request: {error_msg}")
+        
+        # System errors - API or network issues
+        else:
+            raise ComponentException(f"API error ({status_code}): {error_msg}")
+    
+    except requests.exceptions.Timeout:
+        raise ComponentException("API request timed out. Try again later.")
+    
+    except requests.exceptions.ConnectionError as e:
+        raise ComponentException(f"Connection failed: {str(e)}")
+    
+    except requests.exceptions.RequestException as e:
+        raise ComponentException(f"Request failed: {str(e)}")
+
+def run_component():
+    """Component main execution with proper error handling."""
+    try:
+        # Validate configuration
+        params = load_configuration()
+        validate_configuration(params)
+        
+        # Make API calls with validation
+        response = requests.get(
+            f"https://{stack_url}/v2/storage/tables",
+            headers={"X-StorageApi-Token": params['#api_key']},
+            timeout=30
+        )
+        data = validate_api_response(response)
+        
+        # Process data
+        result = process_data(data)
+        
+        # Write output
+        write_output(result)
+        
+        logging.info("Component execution completed successfully")
+        sys.exit(0)
+    
+    except UserException as err:
+        # User-fixable errors (exit code 1)
+        logging.error(f"Configuration error: {err}")
+        print(f"ERROR: {err}", file=sys.stderr)
+        print("\nPlease check your configuration and try again.", file=sys.stderr)
+        sys.exit(1)
+    
+    except ComponentException as err:
+        # Component/API errors (exit code 2)
+        logging.error(f"Component error: {err}")
+        print(f"ERROR: {err}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(2)
+    
+    except Exception as err:
+        # Unhandled exceptions (exit code 2)
+        logging.exception("Unhandled error in component execution")
+        print(f"FATAL ERROR: {err}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(2)
+
+if __name__ == '__main__':
+    run_component()
+```
+
+**Error Handling Pattern for Job Polling**:
+
+```python
+def wait_for_job_with_error_handling(job_id: str, timeout: int = 300) -> Dict[str, Any]:
+    """Wait for async job with comprehensive error handling."""
+    start_time = time.time()
+    retry_count = 0
+    max_retries = 3
+    
+    while time.time() - start_time < timeout:
+        try:
+            response = requests.get(
+                f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                headers={"X-StorageApi-Token": token},
+                timeout=15
+            )
+            job = validate_api_response(response)
+            
+            if job["status"] == "success":
+                logging.info(f"Job {job_id} completed successfully")
+                return job
+            
+            elif job["status"] in ["error", "cancelled", "terminated"]:
+                error_msg = job.get("error", {}).get("message", "Unknown error")
+                raise ComponentException(
+                    f"Job {job_id} failed with status '{job['status']}': {error_msg}"
+                )
+            
+            # Reset retry counter on successful status check
+            retry_count = 0
+            time.sleep(2)
+        
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            retry_count += 1
+            if retry_count >= max_retries:
+                raise ComponentException(
+                    f"Failed to check job status after {max_retries} retries: {str(e)}"
+                )
+            
+            logging.warning(f"Error checking job status (retry {retry_count}/{max_retries}): {e}")
+            time.sleep(5 * retry_count)  # Exponential backoff
+    
+    raise ComponentException(f"Job {job_id} did not complete within {timeout}s")
+```
+
+**Logging Best Practices**:
+
+```python
+import logging
+
+# Configure logging at component start
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('/data/out/component.log')
+    ]
+)
+
+# Log at appropriate levels
+logging.debug("Detailed debug information")  # Not shown in production
+logging.info("Component started processing")  # Normal operations
+logging.warning("Rate limited, retrying...")  # Recoverable issues
+logging.error("Failed to connect to API")     # Errors
+logging.exception("Unhandled exception")      # Errors with stack trace
 ```
 
 ## Local Development
@@ -2606,7 +3078,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-18T09:55:36.876173",
+  "generated_at": "2025-12-18T10:01:38.749217",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

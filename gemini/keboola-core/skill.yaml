@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-18T09:55:36.918311'
+  generated_at: '2025-12-18T10:01:38.792294'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -356,7 +356,48 @@ knowledge_base:
     \ for Storage API call\nconn = st.connection('snowflake')  # This is workspace,\
     \ not Storage API\n\n# CORRECT: Use Storage API token\nimport requests\nresponse\
     \ = requests.get(\n    f\"https://{stack_url}/v2/storage/tables\",\n    headers={\"\
-    X-StorageApi-Token\": storage_token}\n)\n```\n"
+    X-StorageApi-Token\": storage_token}\n)\n```\n\n\n### Error Handling During Export\n\
+    \nAlways wrap export operations in try-except blocks:\n\n```python\nimport logging\n\
+    from typing import Optional\n\ndef safe_export_table(table_id: str, output_file:\
+    \ str, timeout: int = 300) -> Optional[str]:\n    \"\"\"Export table with comprehensive\
+    \ error handling.\n    \n    Returns:\n        Path to exported file on success,\
+    \ None on failure\n    \"\"\"\n    try:\n        # Start export job\n        response\
+    \ = requests.post(\n            f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            timeout=30\n\
+    \        )\n        response.raise_for_status()\n        job_id = response.json()[\"\
+    id\"]\n        \n        logging.info(f\"Export job started: {job_id}\")\n   \
+    \     \n        # Poll with timeout\n        start_time = time.time()\n      \
+    \  while time.time() - start_time < timeout:\n            try:\n             \
+    \   job_response = requests.get(\n                    f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n                    headers={\"X-StorageApi-Token\": token},\n            \
+    \        timeout=15\n                )\n                job_response.raise_for_status()\n\
+    \                job = job_response.json()\n                \n               \
+    \ if job[\"status\"] == \"success\":\n                    file_url = job[\"results\"\
+    ][\"file\"][\"url\"]\n                    \n                    # Download file\n\
+    \                    data_response = requests.get(file_url, timeout=60)\n    \
+    \                data_response.raise_for_status()\n                    \n    \
+    \                with open(output_file, \"wb\") as f:\n                      \
+    \  f.write(data_response.content)\n                    \n                    logging.info(f\"\
+    Table exported to {output_file}\")\n                    return output_file\n \
+    \               \n                elif job[\"status\"] in [\"error\", \"cancelled\"\
+    , \"terminated\"]:\n                    error_msg = job.get(\"error\", {}).get(\"\
+    message\", \"Unknown error\")\n                    logging.error(f\"Export job\
+    \ {job['status']}: {error_msg}\")\n                    return None\n         \
+    \       \n                time.sleep(2)\n            \n            except requests.exceptions.RequestException\
+    \ as e:\n                logging.warning(f\"Error checking job status: {e}\")\n\
+    \                time.sleep(5)  # Wait longer before retry\n        \n       \
+    \ logging.error(f\"Export job {job_id} timed out after {timeout}s\")\n       \
+    \ return None\n    \n    except requests.exceptions.HTTPError as e:\n        if\
+    \ e.response.status_code == 401:\n            logging.error(\"Authentication failed\
+    \ - invalid token\")\n        elif e.response.status_code == 404:\n          \
+    \  logging.error(f\"Table {table_id} not found\")\n        else:\n           \
+    \ logging.error(f\"HTTP error during export: {e}\")\n        return None\n   \
+    \ \n    except requests.exceptions.Timeout:\n        logging.error(\"Request timed\
+    \ out\")\n        return None\n    \n    except Exception as e:\n        logging.exception(f\"\
+    Unexpected error during export: {e}\")\n        return None\n\n# Usage\nresult\
+    \ = safe_export_table(\"in.c-main.customers\", \"customers.csv\")\nif result:\n\
+    \    print(f\"Success: {result}\")\nelse:\n    print(\"Export failed - check logs\"\
+    )\n```\n"
   format: markdown
 - source: 03-common-pitfalls.md
   content: "# Common Pitfalls\n\n## 1. Hardcoding Stack URLs\n\n**Problem**: Using\
@@ -394,22 +435,136 @@ knowledge_base:
     \n        )\n\n    return True\n\n# Usage\nvalidate_table_id(\"in.c-main.customers\"\
     )  # ✓\nvalidate_table_id(\"my_table\")  # ✗ Raises ValueError\n```\n\n## 5. Missing\
     \ Error Handling\n\n**Problem**: Not handling API errors gracefully\n\n**Solution**:\
-    \ Always check response status:\n\n```python\ndef safe_api_call(url, headers):\n\
-    \    \"\"\"Make API call with proper error handling.\"\"\"\n    try:\n       \
-    \ response = requests.get(url, headers=headers, timeout=30)\n        response.raise_for_status()\n\
-    \n        return response.json()\n\n    except requests.exceptions.Timeout:\n\
-    \        print(\"Request timed out\")\n        return None\n\n    except requests.exceptions.HTTPError\
-    \ as e:\n        if e.response.status_code == 401:\n            print(\"Invalid\
-    \ token\")\n        elif e.response.status_code == 404:\n            print(\"\
-    Resource not found\")\n        else:\n            print(f\"HTTP error: {e}\")\n\
-    \        return None\n\n    except Exception as e:\n        print(f\"Unexpected\
-    \ error: {e}\")\n        return None\n```\n\n\n## 3. Wrong HTTP Method for Async\
-    \ Endpoints\n\n**Problem**: Using GET instead of POST for async export operations\n\
-    \n**Solution**: Always use POST for /export-async endpoints:\n\n```python\n# ❌\
-    \ WRONG - This will return 405 Method Not Allowed\nresponse = requests.get(\n\
-    \    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\",\n   \
-    \ headers={\"X-StorageApi-Token\": token}\n)\n\n# ✅ CORRECT - Use POST to initiate\
-    \ async jobs\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    \ Implement comprehensive error handling with retries and structured responses:\n\
+    \n```python\nimport time\nimport logging\nfrom typing import Optional, Dict, Any\n\
+    from requests.exceptions import HTTPError, ConnectionError, Timeout, RequestException\n\
+    \nclass KeboolaAPIError(Exception):\n    \"\"\"Base exception for Keboola API\
+    \ errors.\"\"\"\n    def __init__(self, message: str, status_code: Optional[int]\
+    \ = None, response: Optional[Dict] = None):\n        self.message = message\n\
+    \        self.status_code = status_code\n        self.response = response\n  \
+    \      super().__init__(self.message)\n\nclass KeboolaAuthError(KeboolaAPIError):\n\
+    \    \"\"\"Authentication failed (401).\"\"\"\n    pass\n\nclass KeboolaNotFoundError(KeboolaAPIError):\n\
+    \    \"\"\"Resource not found (404).\"\"\"\n    pass\n\nclass KeboolaRateLimitError(KeboolaAPIError):\n\
+    \    \"\"\"Rate limit exceeded (429).\"\"\"\n    pass\n\nclass KeboolaValidationError(KeboolaAPIError):\n\
+    \    \"\"\"Invalid request data (400, 422).\"\"\"\n    pass\n\ndef parse_error_response(response)\
+    \ -> str:\n    \"\"\"Extract error message from Keboola API response.\"\"\"\n\
+    \    try:\n        error_data = response.json()\n        # Keboola API error format\n\
+    \        if 'error' in error_data:\n            return error_data['error']\n \
+    \       if 'message' in error_data:\n            return error_data['message']\n\
+    \        return str(error_data)\n    except Exception:\n        return response.text\
+    \ or f\"HTTP {response.status_code}\"\n\ndef api_call_with_retry(\n    url: str,\n\
+    \    headers: Dict[str, str],\n    method: str = 'GET',\n    max_retries: int\
+    \ = 3,\n    timeout: int = 30,\n    **kwargs\n) -> Dict[str, Any]:\n    \"\"\"\
+    Make API call with exponential backoff retry logic.\n    \n    Args:\n       \
+    \ url: API endpoint URL\n        headers: Request headers (must include X-StorageApi-Token)\n\
+    \        method: HTTP method (GET, POST, etc.)\n        max_retries: Maximum number\
+    \ of retry attempts\n        timeout: Request timeout in seconds\n        **kwargs:\
+    \ Additional arguments passed to requests\n    \n    Returns:\n        Parsed\
+    \ JSON response\n    \n    Raises:\n        KeboolaAuthError: Authentication failed\n\
+    \        KeboolaNotFoundError: Resource not found\n        KeboolaRateLimitError:\
+    \ Rate limit exceeded after retries\n        KeboolaValidationError: Invalid request\
+    \ data\n        KeboolaAPIError: Other API errors\n    \"\"\"\n    import requests\n\
+    \    \n    for attempt in range(max_retries):\n        try:\n            response\
+    \ = requests.request(\n                method=method,\n                url=url,\n\
+    \                headers=headers,\n                timeout=timeout,\n        \
+    \        **kwargs\n            )\n            response.raise_for_status()\n  \
+    \          return response.json()\n\n        except Timeout:\n            logging.warning(f\"\
+    Request timeout (attempt {attempt + 1}/{max_retries})\")\n            if attempt\
+    \ == max_retries - 1:\n                raise KeboolaAPIError(\n              \
+    \      f\"Request timed out after {max_retries} attempts\",\n                \
+    \    response=None\n                )\n            time.sleep(2 ** attempt)\n\n\
+    \        except ConnectionError as e:\n            logging.warning(f\"Connection\
+    \ error (attempt {attempt + 1}/{max_retries}): {e}\")\n            if attempt\
+    \ == max_retries - 1:\n                raise KeboolaAPIError(\n              \
+    \      f\"Connection failed after {max_retries} attempts: {str(e)}\",\n      \
+    \              response=None\n                )\n            time.sleep(2 ** attempt)\n\
+    \n        except HTTPError as e:\n            error_msg = parse_error_response(e.response)\n\
+    \            status_code = e.response.status_code\n\n            # Don't retry\
+    \ client errors (except rate limit)\n            if status_code == 401:\n    \
+    \            raise KeboolaAuthError(\n                    f\"Authentication failed:\
+    \ {error_msg}\",\n                    status_code=status_code,\n             \
+    \       response=e.response.json() if e.response.content else None\n         \
+    \       )\n            \n            elif status_code == 404:\n              \
+    \  raise KeboolaNotFoundError(\n                    f\"Resource not found: {error_msg}\"\
+    ,\n                    status_code=status_code,\n                    response=e.response.json()\
+    \ if e.response.content else None\n                )\n            \n         \
+    \   elif status_code in [400, 422]:\n                raise KeboolaValidationError(\n\
+    \                    f\"Invalid request: {error_msg}\",\n                    status_code=status_code,\n\
+    \                    response=e.response.json() if e.response.content else None\n\
+    \                )\n            \n            elif status_code == 429:\n     \
+    \           # Rate limited - retry with exponential backoff\n                wait_time\
+    \ = 2 ** attempt\n                logging.warning(f\"Rate limited. Waiting {wait_time}s\
+    \ (attempt {attempt + 1}/{max_retries})\")\n                if attempt == max_retries\
+    \ - 1:\n                    raise KeboolaRateLimitError(\n                   \
+    \     f\"Rate limit exceeded after {max_retries} attempts\",\n               \
+    \         status_code=status_code,\n                        response=e.response.json()\
+    \ if e.response.content else None\n                    )\n                time.sleep(wait_time)\n\
+    \            \n            elif status_code >= 500:\n                # Server\
+    \ error - retry\n                wait_time = 2 ** attempt\n                logging.warning(f\"\
+    Server error {status_code}. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})\"\
+    )\n                if attempt == max_retries - 1:\n                    raise KeboolaAPIError(\n\
+    \                        f\"Server error after {max_retries} attempts: {error_msg}\"\
+    ,\n                        status_code=status_code,\n                        response=e.response.json()\
+    \ if e.response.content else None\n                    )\n                time.sleep(wait_time)\n\
+    \            \n            else:\n                # Other HTTP errors - don't\
+    \ retry\n                raise KeboolaAPIError(\n                    f\"HTTP {status_code}:\
+    \ {error_msg}\",\n                    status_code=status_code,\n             \
+    \       response=e.response.json() if e.response.content else None\n         \
+    \       )\n\n        except RequestException as e:\n            logging.error(f\"\
+    Request failed (attempt {attempt + 1}/{max_retries}): {e}\")\n            if attempt\
+    \ == max_retries - 1:\n                raise KeboolaAPIError(\n              \
+    \      f\"Request failed after {max_retries} attempts: {str(e)}\",\n         \
+    \           response=None\n                )\n            time.sleep(2 ** attempt)\n\
+    \n    raise KeboolaAPIError(\"Max retries exceeded\", response=None)\n\n# Usage\
+    \ examples\ndef get_table_info(table_id: str) -> Dict[str, Any]:\n    \"\"\"Get\
+    \ table information with error handling.\"\"\"\n    try:\n        return api_call_with_retry(\n\
+    \            url=f\"https://{stack_url}/v2/storage/tables/{table_id}\",\n    \
+    \        headers={\"X-StorageApi-Token\": token},\n            method='GET',\n\
+    \            max_retries=3,\n            timeout=30\n        )\n    except KeboolaNotFoundError:\n\
+    \        logging.error(f\"Table {table_id} does not exist\")\n        raise\n\
+    \    except KeboolaAuthError:\n        logging.error(\"Invalid or expired token\"\
+    )\n        raise\n    except KeboolaAPIError as e:\n        logging.error(f\"\
+    Failed to get table info: {e.message}\")\n        raise\n\ndef export_table_with_error_handling(table_id:\
+    \ str) -> str:\n    \"\"\"Export table with comprehensive error handling.\"\"\"\
+    \n    try:\n        # Start export job\n        job_response = api_call_with_retry(\n\
+    \            url=f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n            headers={\"X-StorageApi-Token\": token},\n            method='POST',\n\
+    \            max_retries=3,\n            timeout=30\n        )\n        job_id\
+    \ = job_response[\"id\"]\n        \n        # Poll for completion\n        timeout\
+    \ = 300\n        start_time = time.time()\n        \n        while time.time()\
+    \ - start_time < timeout:\n            try:\n                job = api_call_with_retry(\n\
+    \                    url=f\"https://{stack_url}/v2/storage/jobs/{job_id}\",\n\
+    \                    headers={\"X-StorageApi-Token\": token},\n              \
+    \      method='GET',\n                    max_retries=2,  # Fewer retries for\
+    \ polling\n                    timeout=15\n                )\n               \
+    \ \n                if job[\"status\"] == \"success\":\n                    file_url\
+    \ = job[\"results\"][\"file\"][\"url\"]\n                    return file_url\n\
+    \                \n                elif job[\"status\"] in [\"error\", \"cancelled\"\
+    , \"terminated\"]:\n                    error_msg = job.get(\"error\", {}).get(\"\
+    message\", \"Unknown error\")\n                    raise KeboolaAPIError(\n  \
+    \                      f\"Export job failed: {error_msg}\",\n                \
+    \        response=job\n                    )\n                \n             \
+    \   time.sleep(2)\n            \n            except KeboolaAPIError as e:\n  \
+    \              # If job status check fails, re-raise\n                logging.error(f\"\
+    Failed to check job status: {e.message}\")\n                raise\n        \n\
+    \        raise KeboolaAPIError(f\"Export job {job_id} timed out after {timeout}s\"\
+    )\n    \n    except KeboolaNotFoundError:\n        logging.error(f\"Table {table_id}\
+    \ not found\")\n        raise\n    except KeboolaAuthError:\n        logging.error(\"\
+    Authentication failed - check your token\")\n        raise\n    except KeboolaValidationError\
+    \ as e:\n        logging.error(f\"Invalid export request: {e.message}\")\n   \
+    \     raise\n    except KeboolaAPIError as e:\n        logging.error(f\"Export\
+    \ failed: {e.message}\")\n        raise\n```\n\n**Error Handling Best Practices**:\n\
+    \n1. **Use custom exceptions** for different error types\n2. **Retry transient\
+    \ errors** (timeouts, rate limits, 5xx)\n3. **Don't retry client errors** (401,\
+    \ 404, 400)\n4. **Parse error responses** to get meaningful messages\n5. **Log\
+    \ errors** with appropriate severity\n6. **Set timeouts** on all requests\n7.\
+    \ **Implement exponential backoff** for retries\n8. **Handle job polling errors**\
+    \ separately from API errors\n\n\n## 3. Wrong HTTP Method for Async Endpoints\n\
+    \n**Problem**: Using GET instead of POST for async export operations\n\n**Solution**:\
+    \ Always use POST for /export-async endpoints:\n\n```python\n# ❌ WRONG - This\
+    \ will return 405 Method Not Allowed\nresponse = requests.get(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
+    ,\n    headers={\"X-StorageApi-Token\": token}\n)\n\n# ✅ CORRECT - Use POST to\
+    \ initiate async jobs\nresponse = requests.post(\n    f\"https://{stack_url}/v2/storage/tables/{table_id}/export-async\"\
     ,\n    headers={\"X-StorageApi-Token\": token}\n)\n```\n\n**Why**: The `/export-async`\
     \ endpoint creates a new export job, which is a write operation requiring POST.\
     \ The API will reject GET requests.\n\n\n\n## 6. Incremental Loads Without Primary\
@@ -651,45 +806,112 @@ knowledge_base:
     \       'records_processed': len(new_data)\n    })\n```\n\n## Error Handling\n\
     \nFollow Keboola's error handling conventions:\n\n- **Exit code 1**: User errors\
     \ (configuration problems, invalid inputs)\n- **Exit code 2**: System errors (unhandled\
-    \ exceptions, application errors)\n\n```python\ntry:\n    # Component logic\n\
-    \    validate_inputs(params)\n    result = perform_operation()\n\nexcept ValueError\
-    \ as err:\n    # User-fixable errors\n    logging.error(f\"Configuration error:\
-    \ {err}\")\n    print(err, file=sys.stderr)\n    sys.exit(1)\n\nexcept requests.HTTPError\
-    \ as err:\n    # API errors\n    logging.error(f\"API request failed: {err}\"\
-    )\n    print(f\"Failed to connect to API: {err.response.status_code}\", file=sys.stderr)\n\
-    \    sys.exit(1)\n\nexcept Exception as err:\n    # Unhandled exceptions\n   \
-    \ logging.exception(\"Unhandled error in component execution\")\n    traceback.print_exc(file=sys.stderr)\n\
-    \    sys.exit(2)\n```\n\n## Local Development\n\n### Running Locally\n\n```bash\n\
-    # Set up virtual environment\npython -m venv .venv\nsource .venv/bin/activate\n\
-    pip install -e .\n\n# Set data directory environment variable\nexport KBC_DATADIR=./data\n\
-    \n# Run component\npython src/component.py\n```\n\n### Using Docker\n\n```bash\n\
-    # Build image\ndocker build -t my-component:latest .\n\n# Run with mounted data\
-    \ folder\ndocker run --rm \\\n  -v $(pwd)/data:/data \\\n  -e KBC_DATADIR=/data\
-    \ \\\n  my-component:latest\n```\n\n### Prepare Test Data\n\nCreate `data/config.json`\
-    \ with example parameters:\n\n```json\n{\n  \"parameters\": {\n    \"api_key\"\
-    : \"your_key_here\",\n    \"#password\": \"test_password\",\n    \"from_date\"\
-    : \"2024-01-01\",\n    \"incremental\": false\n  }\n}\n```\n\nCreate sample input\
-    \ tables:\n\n```bash\nmkdir -p data/in/tables\ncat > data/in/tables/input.csv\
-    \ <<EOF\nid,name,email\n1,John Doe,john@example.com\n2,Jane Smith,jane@example.com\n\
-    EOF\n```\n\n## Best Practices\n\n### DO:\n\n- Use `CommonInterface` class for\
-    \ all Keboola interactions\n- Validate configuration early with `validate_configuration()`\n\
-    - Process CSV files with generators for memory efficiency\n- Always specify `encoding='utf-8'`\
-    \ for file operations\n- Use proper exit codes (1 for user errors, 2 for system\
-    \ errors)\n- Define explicit schemas for output tables\n- Implement state management\
-    \ for incremental processing\n- Write comprehensive tests\n- Quote all SQL identifiers\
-    \ (`\"column_name\"`, not `column_name`)\n\n### DON'T:\n\n- Load entire CSV files\
-    \ into memory\n- Hard-code configuration values\n- Skip configuration validation\n\
-    - Forget to write manifests for output tables\n- Skip state file management for\
-    \ incremental loads\n- Forget to handle null characters in CSV files\n- Call `mkdir()`\
-    \ for platform-managed directories (in/, out/, tables/, files/)\n\n## Dockerfile\n\
-    \n```dockerfile\nFROM python:3.11-alpine\n\n# Install dependencies\nWORKDIR /code\n\
-    COPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\n\
-    # Copy component code\nCOPY src/ /code/src/\n\n# Set entrypoint with unbuffered\
-    \ output\nENTRYPOINT [\"python\", \"-u\", \"/code/src/component.py\"]\n```\n\n\
-    ## CI/CD Deployment\n\n### GitHub Actions Workflow\n\n```yaml\n# .github/workflows/push.yml\n\
-    name: Build and Deploy\n\non:\n  push:\n    tags:\n      - 'v*'\n\njobs:\n  build:\n\
-    \    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n\n\
-    \      - name: Build Docker image\n        run: docker build -t my-component:${{\
+    \ exceptions, application errors)\n\n```python\nimport sys\nimport logging\nimport\
+    \ traceback\nfrom typing import Dict, Any\nimport requests\n\nclass UserException(Exception):\n\
+    \    \"\"\"User-fixable configuration or input error.\"\"\"\n    pass\n\nclass\
+    \ ComponentException(Exception):\n    \"\"\"Component execution error.\"\"\"\n\
+    \    pass\n\ndef validate_api_response(response: requests.Response) -> Dict[str,\
+    \ Any]:\n    \"\"\"Validate API response and raise appropriate errors.\"\"\"\n\
+    \    try:\n        response.raise_for_status()\n        return response.json()\n\
+    \    except requests.exceptions.HTTPError as e:\n        status_code = e.response.status_code\n\
+    \        \n        try:\n            error_data = e.response.json()\n        \
+    \    error_msg = error_data.get('error', error_data.get('message', str(error_data)))\n\
+    \        except Exception:\n            error_msg = e.response.text or f\"HTTP\
+    \ {status_code}\"\n        \n        # User errors - configuration issues\n  \
+    \      if status_code in [400, 401, 403, 404, 422]:\n            if status_code\
+    \ == 401:\n                raise UserException(f\"Authentication failed: {error_msg}.\
+    \ Check your API token.\")\n            elif status_code == 404:\n           \
+    \     raise UserException(f\"Resource not found: {error_msg}. Verify table/bucket\
+    \ ID.\")\n            else:\n                raise UserException(f\"Invalid request:\
+    \ {error_msg}\")\n        \n        # System errors - API or network issues\n\
+    \        else:\n            raise ComponentException(f\"API error ({status_code}):\
+    \ {error_msg}\")\n    \n    except requests.exceptions.Timeout:\n        raise\
+    \ ComponentException(\"API request timed out. Try again later.\")\n    \n    except\
+    \ requests.exceptions.ConnectionError as e:\n        raise ComponentException(f\"\
+    Connection failed: {str(e)}\")\n    \n    except requests.exceptions.RequestException\
+    \ as e:\n        raise ComponentException(f\"Request failed: {str(e)}\")\n\ndef\
+    \ run_component():\n    \"\"\"Component main execution with proper error handling.\"\
+    \"\"\n    try:\n        # Validate configuration\n        params = load_configuration()\n\
+    \        validate_configuration(params)\n        \n        # Make API calls with\
+    \ validation\n        response = requests.get(\n            f\"https://{stack_url}/v2/storage/tables\"\
+    ,\n            headers={\"X-StorageApi-Token\": params['#api_key']},\n       \
+    \     timeout=30\n        )\n        data = validate_api_response(response)\n\
+    \        \n        # Process data\n        result = process_data(data)\n     \
+    \   \n        # Write output\n        write_output(result)\n        \n       \
+    \ logging.info(\"Component execution completed successfully\")\n        sys.exit(0)\n\
+    \    \n    except UserException as err:\n        # User-fixable errors (exit code\
+    \ 1)\n        logging.error(f\"Configuration error: {err}\")\n        print(f\"\
+    ERROR: {err}\", file=sys.stderr)\n        print(\"\\nPlease check your configuration\
+    \ and try again.\", file=sys.stderr)\n        sys.exit(1)\n    \n    except ComponentException\
+    \ as err:\n        # Component/API errors (exit code 2)\n        logging.error(f\"\
+    Component error: {err}\")\n        print(f\"ERROR: {err}\", file=sys.stderr)\n\
+    \        traceback.print_exc(file=sys.stderr)\n        sys.exit(2)\n    \n   \
+    \ except Exception as err:\n        # Unhandled exceptions (exit code 2)\n   \
+    \     logging.exception(\"Unhandled error in component execution\")\n        print(f\"\
+    FATAL ERROR: {err}\", file=sys.stderr)\n        traceback.print_exc(file=sys.stderr)\n\
+    \        sys.exit(2)\n\nif __name__ == '__main__':\n    run_component()\n```\n\
+    \n**Error Handling Pattern for Job Polling**:\n\n```python\ndef wait_for_job_with_error_handling(job_id:\
+    \ str, timeout: int = 300) -> Dict[str, Any]:\n    \"\"\"Wait for async job with\
+    \ comprehensive error handling.\"\"\"\n    start_time = time.time()\n    retry_count\
+    \ = 0\n    max_retries = 3\n    \n    while time.time() - start_time < timeout:\n\
+    \        try:\n            response = requests.get(\n                f\"https://{stack_url}/v2/storage/jobs/{job_id}\"\
+    ,\n                headers={\"X-StorageApi-Token\": token},\n                timeout=15\n\
+    \            )\n            job = validate_api_response(response)\n          \
+    \  \n            if job[\"status\"] == \"success\":\n                logging.info(f\"\
+    Job {job_id} completed successfully\")\n                return job\n         \
+    \   \n            elif job[\"status\"] in [\"error\", \"cancelled\", \"terminated\"\
+    ]:\n                error_msg = job.get(\"error\", {}).get(\"message\", \"Unknown\
+    \ error\")\n                raise ComponentException(\n                    f\"\
+    Job {job_id} failed with status '{job['status']}': {error_msg}\"\n           \
+    \     )\n            \n            # Reset retry counter on successful status\
+    \ check\n            retry_count = 0\n            time.sleep(2)\n        \n  \
+    \      except (requests.exceptions.Timeout, requests.exceptions.ConnectionError)\
+    \ as e:\n            retry_count += 1\n            if retry_count >= max_retries:\n\
+    \                raise ComponentException(\n                    f\"Failed to check\
+    \ job status after {max_retries} retries: {str(e)}\"\n                )\n    \
+    \        \n            logging.warning(f\"Error checking job status (retry {retry_count}/{max_retries}):\
+    \ {e}\")\n            time.sleep(5 * retry_count)  # Exponential backoff\n   \
+    \ \n    raise ComponentException(f\"Job {job_id} did not complete within {timeout}s\"\
+    )\n```\n\n**Logging Best Practices**:\n\n```python\nimport logging\n\n# Configure\
+    \ logging at component start\nlogging.basicConfig(\n    level=logging.INFO,\n\
+    \    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',\n    handlers=[\n\
+    \        logging.StreamHandler(sys.stdout),\n        logging.FileHandler('/data/out/component.log')\n\
+    \    ]\n)\n\n# Log at appropriate levels\nlogging.debug(\"Detailed debug information\"\
+    )  # Not shown in production\nlogging.info(\"Component started processing\") \
+    \ # Normal operations\nlogging.warning(\"Rate limited, retrying...\")  # Recoverable\
+    \ issues\nlogging.error(\"Failed to connect to API\")     # Errors\nlogging.exception(\"\
+    Unhandled exception\")      # Errors with stack trace\n```\n\n## Local Development\n\
+    \n### Running Locally\n\n```bash\n# Set up virtual environment\npython -m venv\
+    \ .venv\nsource .venv/bin/activate\npip install -e .\n\n# Set data directory environment\
+    \ variable\nexport KBC_DATADIR=./data\n\n# Run component\npython src/component.py\n\
+    ```\n\n### Using Docker\n\n```bash\n# Build image\ndocker build -t my-component:latest\
+    \ .\n\n# Run with mounted data folder\ndocker run --rm \\\n  -v $(pwd)/data:/data\
+    \ \\\n  -e KBC_DATADIR=/data \\\n  my-component:latest\n```\n\n### Prepare Test\
+    \ Data\n\nCreate `data/config.json` with example parameters:\n\n```json\n{\n \
+    \ \"parameters\": {\n    \"api_key\": \"your_key_here\",\n    \"#password\": \"\
+    test_password\",\n    \"from_date\": \"2024-01-01\",\n    \"incremental\": false\n\
+    \  }\n}\n```\n\nCreate sample input tables:\n\n```bash\nmkdir -p data/in/tables\n\
+    cat > data/in/tables/input.csv <<EOF\nid,name,email\n1,John Doe,john@example.com\n\
+    2,Jane Smith,jane@example.com\nEOF\n```\n\n## Best Practices\n\n### DO:\n\n- Use\
+    \ `CommonInterface` class for all Keboola interactions\n- Validate configuration\
+    \ early with `validate_configuration()`\n- Process CSV files with generators for\
+    \ memory efficiency\n- Always specify `encoding='utf-8'` for file operations\n\
+    - Use proper exit codes (1 for user errors, 2 for system errors)\n- Define explicit\
+    \ schemas for output tables\n- Implement state management for incremental processing\n\
+    - Write comprehensive tests\n- Quote all SQL identifiers (`\"column_name\"`, not\
+    \ `column_name`)\n\n### DON'T:\n\n- Load entire CSV files into memory\n- Hard-code\
+    \ configuration values\n- Skip configuration validation\n- Forget to write manifests\
+    \ for output tables\n- Skip state file management for incremental loads\n- Forget\
+    \ to handle null characters in CSV files\n- Call `mkdir()` for platform-managed\
+    \ directories (in/, out/, tables/, files/)\n\n## Dockerfile\n\n```dockerfile\n\
+    FROM python:3.11-alpine\n\n# Install dependencies\nWORKDIR /code\nCOPY requirements.txt\
+    \ .\nRUN pip install --no-cache-dir -r requirements.txt\n\n# Copy component code\n\
+    COPY src/ /code/src/\n\n# Set entrypoint with unbuffered output\nENTRYPOINT [\"\
+    python\", \"-u\", \"/code/src/component.py\"]\n```\n\n## CI/CD Deployment\n\n\
+    ### GitHub Actions Workflow\n\n```yaml\n# .github/workflows/push.yml\nname: Build\
+    \ and Deploy\n\non:\n  push:\n    tags:\n      - 'v*'\n\njobs:\n  build:\n   \
+    \ runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n\n  \
+    \    - name: Build Docker image\n        run: docker build -t my-component:${{\
     \ github.ref_name }} .\n\n      - name: Run tests\n        run: docker-compose\
     \ run --rm test\n\n      - name: Deploy to Keboola\n        env:\n          KBC_DEVELOPERPORTAL_USERNAME:\
     \ ${{ secrets.KBC_USERNAME }}\n          KBC_DEVELOPERPORTAL_PASSWORD: ${{ secrets.KBC_PASSWORD\

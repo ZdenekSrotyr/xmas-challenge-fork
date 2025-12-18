@@ -669,3 +669,94 @@ response = requests.get(
     headers={"X-StorageApi-Token": storage_token}
 )
 ```
+
+
+### Error Handling During Export
+
+Always wrap export operations in try-except blocks:
+
+```python
+import logging
+from typing import Optional
+
+def safe_export_table(table_id: str, output_file: str, timeout: int = 300) -> Optional[str]:
+    """Export table with comprehensive error handling.
+    
+    Returns:
+        Path to exported file on success, None on failure
+    """
+    try:
+        # Start export job
+        response = requests.post(
+            f"https://{stack_url}/v2/storage/tables/{table_id}/export-async",
+            headers={"X-StorageApi-Token": token},
+            timeout=30
+        )
+        response.raise_for_status()
+        job_id = response.json()["id"]
+        
+        logging.info(f"Export job started: {job_id}")
+        
+        # Poll with timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                job_response = requests.get(
+                    f"https://{stack_url}/v2/storage/jobs/{job_id}",
+                    headers={"X-StorageApi-Token": token},
+                    timeout=15
+                )
+                job_response.raise_for_status()
+                job = job_response.json()
+                
+                if job["status"] == "success":
+                    file_url = job["results"]["file"]["url"]
+                    
+                    # Download file
+                    data_response = requests.get(file_url, timeout=60)
+                    data_response.raise_for_status()
+                    
+                    with open(output_file, "wb") as f:
+                        f.write(data_response.content)
+                    
+                    logging.info(f"Table exported to {output_file}")
+                    return output_file
+                
+                elif job["status"] in ["error", "cancelled", "terminated"]:
+                    error_msg = job.get("error", {}).get("message", "Unknown error")
+                    logging.error(f"Export job {job['status']}: {error_msg}")
+                    return None
+                
+                time.sleep(2)
+            
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Error checking job status: {e}")
+                time.sleep(5)  # Wait longer before retry
+        
+        logging.error(f"Export job {job_id} timed out after {timeout}s")
+        return None
+    
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            logging.error("Authentication failed - invalid token")
+        elif e.response.status_code == 404:
+            logging.error(f"Table {table_id} not found")
+        else:
+            logging.error(f"HTTP error during export: {e}")
+        return None
+    
+    except requests.exceptions.Timeout:
+        logging.error("Request timed out")
+        return None
+    
+    except Exception as e:
+        logging.exception(f"Unexpected error during export: {e}")
+        return None
+
+# Usage
+result = safe_export_table("in.c-main.customers", "customers.csv")
+if result:
+    print(f"Success: {result}")
+else:
+    print("Export failed - check logs")
+```
