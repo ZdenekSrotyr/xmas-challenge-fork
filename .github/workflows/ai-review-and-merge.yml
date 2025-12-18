@@ -62,16 +62,28 @@ jobs:
               }
             });
 
-            // Check iteration count from labels
-            const iterationLabel = pr.data.labels.find(l => l.name.startsWith('ai-iteration-'));
-            const currentIteration = iterationLabel
-              ? parseInt(iterationLabel.name.replace('ai-iteration-', ''))
-              : 0;
-
             // Extract issue number from PR body
             const prBody = pr.data.body || '';
             const issueMatch = prBody.match(/\*\*Fixes:\*\*\s*#(\d+)/);
             const issueNumber = issueMatch ? parseInt(issueMatch[1]) : null;
+
+            // Get iteration count from ISSUE labels (not PR labels)
+            let currentIteration = 0;
+            if (issueNumber) {
+              try {
+                const issue = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber
+                });
+                const iterationLabel = issue.data.labels.find(l => l.name.startsWith('ai-iteration-'));
+                currentIteration = iterationLabel
+                  ? parseInt(iterationLabel.name.replace('ai-iteration-', ''))
+                  : 0;
+              } catch (e) {
+                console.log(`Warning: Could not fetch issue #${issueNumber}: ${e.message}`);
+              }
+            }
 
             // Write to files for Python script
             const fs = require('fs');
