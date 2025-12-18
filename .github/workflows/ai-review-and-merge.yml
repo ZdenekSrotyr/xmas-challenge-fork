@@ -61,6 +61,17 @@ jobs:
               }
             });
 
+            // Check iteration count from labels
+            const iterationLabel = pr.data.labels.find(l => l.name.startsWith('ai-iteration-'));
+            const currentIteration = iterationLabel
+              ? parseInt(iterationLabel.name.replace('ai-iteration-', ''))
+              : 0;
+
+            // Extract issue number from PR body
+            const prBody = pr.data.body || '';
+            const issueMatch = prBody.match(/\*\*Fixes:\*\*\s*#(\d+)/);
+            const issueNumber = issueMatch ? parseInt(issueMatch[1]) : null;
+
             // Write to files for Python script
             const fs = require('fs');
             fs.writeFileSync('pr-data.json', JSON.stringify({
@@ -72,10 +83,16 @@ jobs:
                 additions: f.additions,
                 deletions: f.deletions,
                 changes: f.changes
-              }))
+              })),
+              iteration: currentIteration,
+              issue_number: issueNumber
             }, null, 2));
 
             fs.writeFileSync('pr-diff.txt', diff.data);
+
+            // Output for next steps
+            core.setOutput('iteration', currentIteration);
+            core.setOutput('issue_number', issueNumber);
 
             return pr.data;
 
@@ -101,14 +118,19 @@ jobs:
               pr_diff = f.read()
 
           # Prepare review prompt
+          iteration = pr_data.get('iteration', 0)
+          max_iterations = 2
+
           prompt = f"""You are an AI code reviewer for a self-healing knowledge base system.
 
-          Review this auto-generated PR and decide if it should be automatically merged.
+          Review this auto-generated PR and decide what action to take.
 
           **PR Title:** {pr_data['title']}
 
           **PR Description:**
           {pr_data['body']}
+
+          **Iteration:** {iteration}/{max_iterations} (this is iteration #{iteration + 1})
 
           **Files Changed ({len(pr_data['files'])} files):**
           {chr(10).join([f"- {f['filename']} (+{f['additions']} -{f['deletions']})" for f in pr_data['files']])}
@@ -137,24 +159,33 @@ jobs:
              - If docs/ changed, are claude/ and gemini/ also updated?
              - Skill files should reflect docs/ changes
 
-          **Decision:**
+          **Decision Options:**
           Respond with a JSON object (ONLY JSON, no markdown):
 
           {{
-            "decision": "MERGE" or "NEEDS_REVIEW",
+            "decision": "MERGE" or "REQUEST_CHANGES" or "NEEDS_REVIEW",
             "confidence": 0-100,
             "reasoning": "Brief explanation of decision",
             "safety_score": 0-100,
             "relevance_score": 0-100,
             "quality_score": 0-100,
             "issues_found": ["list", "of", "issues"] or [],
-            "recommendation": "What to do next"
+            "recommendation": "What to do next",
+            "improvement_suggestions": ["specific", "actionable", "changes"] or []
           }}
 
           **Guidelines:**
-          - MERGE if: confidence >= 80, safety >= 90, no critical issues
-          - NEEDS_REVIEW if: confidence < 80, safety < 90, or critical issues found
-          - Be conservative - if unsure, choose NEEDS_REVIEW
+          - MERGE if: confidence >= 80, safety >= 90, quality >= 80, no critical issues
+          - REQUEST_CHANGES if: confidence 60-79, fixable issues, iteration < {max_iterations}
+            * Provide specific, actionable improvement_suggestions
+            * Issues are minor and can be fixed automatically
+          - NEEDS_REVIEW if: confidence < 60, safety < 80, or iteration >= {max_iterations}
+            * Issues too complex for automatic fixing
+            * Or maximum iterations reached
+
+          **Important:** If iteration is already {max_iterations}, you MUST choose either MERGE or NEEDS_REVIEW (not REQUEST_CHANGES).
+
+          Be specific in improvement_suggestions - these will be sent to Claude AI for automatic fixes.
           """
 
           try:
@@ -195,6 +226,13 @@ jobs:
                   f.write(f"safety_score={review['safety_score']}\n")
                   f.write(f"relevance_score={review['relevance_score']}\n")
                   f.write(f"quality_score={review['quality_score']}\n")
+
+                  # Handle improvement_suggestions
+                  if 'improvement_suggestions' in review and review['improvement_suggestions']:
+                      suggestions = json.dumps(review['improvement_suggestions'])
+                      # Escape newlines and quotes for GitHub Actions
+                      suggestions = suggestions.replace('\n', '%0A').replace('\r', '%0D')
+                      f.write(f"improvement_suggestions={suggestions}\n")
 
               # Save full review
               with open('ai-review.json', 'w') as f:
@@ -251,6 +289,8 @@ jobs:
 
             if (decision === 'MERGE') {
               comment += `### ✅ **APPROVED FOR AUTO-MERGE**\n\n`;
+            } else if (decision === 'REQUEST_CHANGES') {
+              comment += `### 🔄 **REQUESTING IMPROVEMENTS**\n\n`;
             } else {
               comment += `### ⚠️ **NEEDS HUMAN REVIEW**\n\n`;
             }
@@ -270,12 +310,22 @@ jobs:
               comment += `\n`;
             }
 
+            if (fullReview.improvement_suggestions && fullReview.improvement_suggestions.length > 0) {
+              comment += `### 🔧 Improvement Suggestions\n`;
+              fullReview.improvement_suggestions.forEach(suggestion => {
+                comment += `- ${suggestion}\n`;
+              });
+              comment += `\n`;
+            }
+
             if (fullReview.recommendation) {
               comment += `### Recommendation\n${fullReview.recommendation}\n\n`;
             }
 
             if (decision === 'MERGE') {
               comment += `---\n\n🚀 **Proceeding with automatic merge...**`;
+            } else if (decision === 'REQUEST_CHANGES') {
+              comment += `---\n\n🔄 **Triggering AI iteration with improvement suggestions...**`;
             } else {
               comment += `---\n\n👀 **A human should review this PR before merging.**`;
             }
@@ -298,20 +348,141 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Request improvements from AI
+        if: steps.ai-review.outputs.decision == 'REQUEST_CHANGES'
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.pr-details.outputs.issue_number }}
+          CURRENT_ITERATION: ${{ steps.pr-details.outputs.iteration }}
+          IMPROVEMENT_SUGGESTIONS: ${{ steps.ai-review.outputs.improvement_suggestions }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          script: |
+            const issueNumber = process.env.ISSUE_NUMBER;
+            const currentIteration = parseInt(process.env.CURRENT_ITERATION);
+            const nextIteration = currentIteration + 1;
+
+            if (!issueNumber) {
+              console.log('⚠️ No issue number found in PR, cannot trigger iteration');
+              return;
+            }
+
+            // Parse improvement suggestions
+            let suggestions = [];
+            try {
+              suggestions = JSON.parse(process.env.IMPROVEMENT_SUGGESTIONS || '[]');
+            } catch (e) {
+              console.log('⚠️ Failed to parse improvement suggestions:', e);
+            }
+
+            // Add iteration label to related issue
+            const labelName = `ai-iteration-${nextIteration}`;
+
+            // Check if label exists, create if not
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: labelName
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: labelName,
+                  color: 'fbca04',
+                  description: `AI iteration ${nextIteration}`
+                });
+              }
+            }
+
+            // Add label to issue
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: [labelName]
+            });
+
+            // Close current PR with comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🔄 Closing this PR to generate improved version based on AI feedback.\n\n**Iteration ${nextIteration} will address:**\n${suggestions.map(s => `- ${s}`).join('\n')}`
+            });
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              state: 'closed'
+            });
+
+            // Trigger propose-fix workflow with feedback
+            console.log(`🔄 Triggering propose-fix for issue #${issueNumber} with AI feedback (iteration ${nextIteration})`);
+
+            // Get issue details to extract category
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber
+            });
+
+            const categoryLabel = issue.data.labels.find(l =>
+              ['incorrect-info', 'missing-info', 'outdated-docs', 'confusing-explanation'].includes(l.name)
+            );
+
+            const category = categoryLabel ? categoryLabel.name : 'incorrect-info';
+
+            // Format suggestions as additional context
+            const feedback = suggestions.length > 0
+              ? `\n\n**AI Review Feedback (Iteration ${nextIteration}):**\n${suggestions.map(s => `- ${s}`).join('\n')}`
+              : '';
+
+            // Trigger workflow
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'propose-fix.yml',
+              ref: 'main',
+              inputs: {
+                issue_number: issueNumber.toString(),
+                category: category,
+                ai_feedback: feedback
+              }
+            });
+
+            console.log(`✅ Triggered propose-fix with iteration ${nextIteration} feedback`);
+
       - name: Add labels based on decision
+        if: steps.ai-review.outputs.decision != 'REQUEST_CHANGES'
         uses: actions/github-script@v7
         env:
           DECISION: ${{ steps.ai-review.outputs.decision }}
+          CURRENT_ITERATION: ${{ steps.pr-details.outputs.iteration }}
         with:
           script: |
             const decision = process.env.DECISION;
+            const currentIteration = parseInt(process.env.CURRENT_ITERATION);
 
             const labels = ['ai-reviewed'];
 
             if (decision === 'MERGE') {
               labels.push('auto-merged');
-            } else {
+
+              // Add success label if this was after iterations
+              if (currentIteration > 0) {
+                labels.push('ai-improved');
+              }
+            } else if (decision === 'NEEDS_REVIEW') {
               labels.push('needs-human-review');
+
+              // Add max-iterations-reached if applicable
+              if (currentIteration >= 2) {
+                labels.push('max-iterations-reached');
+              }
             }
 
             await github.rest.issues.addLabels({
@@ -324,9 +495,14 @@ jobs:
       - name: Close related issue if merged
         if: steps.ai-review.outputs.decision == 'MERGE'
         uses: actions/github-script@v7
+        env:
+          CURRENT_ITERATION: ${{ steps.pr-details.outputs.iteration }}
+          CONFIDENCE: ${{ steps.ai-review.outputs.confidence }}
         with:
           script: |
             const prBody = context.payload.pull_request.body || '';
+            const currentIteration = parseInt(process.env.CURRENT_ITERATION);
+            const confidence = parseInt(process.env.CONFIDENCE);
 
             // Extract issue number from "Fixes: #123" pattern
             const issueMatch = prBody.match(/\*\*Fixes:\*\*\s*#(\d+)/);
@@ -334,11 +510,18 @@ jobs:
             if (issueMatch) {
               const issueNumber = parseInt(issueMatch[1]);
 
+              let message = `✅ Automaticky vyřešeno a mergnuté v PR #${context.issue.number}\n\n`;
+              message += `🤖 AI Review schválilo změny s ${confidence}% důvěrou.`;
+
+              if (currentIteration > 0) {
+                message += `\n\n🔄 Vyřešeno po ${currentIteration} AI iteraci${currentIteration > 1 ? 'ch' : ''} (automatické zlepšení kvality).`;
+              }
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
-                body: `✅ Automaticky vyřešeno a mergnuté v PR #${context.issue.number}\n\n🤖 AI Review schválilo změny s vysokou důvěrou.`
+                body: message
               });
 
               await github.rest.issues.update({
@@ -348,7 +531,7 @@ jobs:
                 state: 'closed'
               });
 
-              console.log(`Closed issue #${issueNumber}`);
+              console.log(`Closed issue #${issueNumber}${currentIteration > 0 ? ` (after ${currentIteration} iterations)` : ''}`);
             }
 
       - name: Upload review artifact

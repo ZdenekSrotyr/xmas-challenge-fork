@@ -11,6 +11,11 @@ on:
         description: 'Issue category (api-error, outdated-docs, pitfall, other)'
         required: true
         type: string
+      ai_feedback:
+        description: 'AI Review feedback from previous iteration (optional)'
+        required: false
+        type: string
+        default: ''
 
 # Only allow ONE propose-fix workflow at a time (sequential processing)
 # This prevents merge conflicts when multiple issues modify the same files
@@ -151,6 +156,7 @@ jobs:
         if: steps.find-files.outputs.file_count > 0
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_FEEDBACK: ${{ github.event.inputs.ai_feedback }}
         run: |
           python - <<'EOF'
           import os
@@ -189,7 +195,19 @@ jobs:
           for file_path, content in file_contents.items():
               context += f"=== {file_path} ===\n{content}\n\n"
 
+          # Check for AI feedback from previous iteration
+          ai_feedback = os.environ.get('AI_FEEDBACK', '').strip()
+
           # Prepare the fix generation prompt
+          feedback_section = ""
+          if ai_feedback:
+              feedback_section = f"""
+          **IMPORTANT - AI Review Feedback from Previous Iteration:**
+          {ai_feedback}
+
+          The previous fix attempt was reviewed by AI and needs improvements. Please address the feedback above while fixing the original issue.
+          """
+
           prompt = f"""You are an expert technical writer maintaining the Keboola AI knowledge base.
 
           An issue has been reported:
@@ -198,6 +216,7 @@ jobs:
           **Category:** {category}
           **Description:**
           {issue_body}
+          {feedback_section}
 
           **Current Source Documentation (docs/keboola/):**
           {context}
