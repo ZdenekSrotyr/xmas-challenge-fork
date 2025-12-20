@@ -1,5 +1,6 @@
 {
   "name": "keboola-ai-kit",
+  "owner": "ZdenekSrotyr",
   "version": "1.0.0",
   "description": "Complete self-healing knowledge system for Claude Code + Keboola with AI-powered error reporting and continuous improvement",
   "author": "Zdenek Srotyr",
@@ -18,22 +19,22 @@
   "plugins": [
     {
       "name": "keboola-core",
-      "path": "claude/keboola-core",
+      "source": "claude/keboola-core",
       "description": "Core Keboola platform knowledge - Storage API, Jobs API, Custom Python, Flows"
     },
     {
       "name": "developer",
-      "path": "claude/developer",
+      "source": "claude/developer",
       "description": "Developer toolkit with specialized agents for code review and security analysis"
     },
     {
       "name": "component-developer",
-      "path": "claude/component-developer",
+      "source": "claude/component-developer",
       "description": "Build production-ready Keboola Python components"
     },
     {
       "name": "dataapp-developer",
-      "path": "claude/dataapp-developer",
+      "source": "claude/dataapp-developer",
       "description": "Build Streamlit data apps for Keboola"
     }
   ]
