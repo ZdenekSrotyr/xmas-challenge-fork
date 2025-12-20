@@ -5,18 +5,5 @@
   "author": {
     "name": "Keboola :(){:|:&};: s.r.o.",
     "email": "support@keboola.com"
-  },
-  "skills": {
-    "dataapp-dev": {
-      "path": "skills/dataapp-dev/SKILL.md",
-      "description": "Build Streamlit data apps for Keboola platform"
-    }
-  },
-  "guides": {
-    "quickstart": "skills/dataapp-dev/QUICKSTART.md",
-    "best-practices": "skills/dataapp-dev/best-practices.md",
-    "templates": "skills/dataapp-dev/templates.md",
-    "validation-checklist": "skills/dataapp-dev/validation-checklist.md",
-    "workflow-guide": "skills/dataapp-dev/workflow-guide.md"
   }
 }

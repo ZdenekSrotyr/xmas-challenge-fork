@@ -5,11 +5,5 @@
   "author": {
     "name": "Keboola :(){:|:&};: s.r.o.",
     "email": "support@keboola.com"
-  },
-  "skills": {
-    "keboola": {
-      "path": "SKILL.md",
-      "description": "Comprehensive Keboola platform knowledge including Storage API, Jobs API, components, and best practices"
-    }
   }
 }
