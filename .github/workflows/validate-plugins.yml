@@ -1,0 +1,313 @@
+name: Validate Plugin Structure
+
+on:
+  push:
+    paths:
+      - '.claude-plugin/**'
+      - 'claude/**/.claude-plugin/**'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - '.claude-plugin/**'
+      - 'claude/**/.claude-plugin/**'
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 3 AM UTC
+  workflow_dispatch:
+
+concurrency:
+  group: validate-plugins-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate plugin structure
+        id: validate
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          errors = []
+          warnings = []
+
+          def validate_semver(version, context):
+              """Validate semantic versioning format."""
+              pattern = r'^\d+\.\d+\.\d+$'
+              if not re.match(pattern, version):
+                  errors.append(f"{context}: Invalid version format '{version}' (expected X.Y.Z)")
+                  return False
+              return True
+
+          def validate_email(email, context):
+              """Basic email format validation."""
+              pattern = r'^[^@]+@[^@]+\.[^@]+$'
+              if not re.match(pattern, email):
+                  warnings.append(f"{context}: Email '{email}' may be invalid")
+
+          def validate_marketplace():
+              """Validate .claude-plugin/marketplace.json"""
+              marketplace_path = Path('.claude-plugin/marketplace.json')
+
+              if not marketplace_path.exists():
+                  errors.append("marketplace.json not found at .claude-plugin/marketplace.json")
+                  return None
+
+              try:
+                  with open(marketplace_path) as f:
+                      data = json.load(f)
+              except json.JSONDecodeError as e:
+                  errors.append(f"marketplace.json: Invalid JSON - {e}")
+                  return None
+
+              # Required fields
+              required = ['name', 'owner', 'version', 'plugins']
+              for field in required:
+                  if field not in data:
+                      errors.append(f"marketplace.json: Missing required field '{field}'")
+
+              # Owner must be object
+              if 'owner' in data:
+                  if not isinstance(data['owner'], dict):
+                      errors.append("marketplace.json: 'owner' must be an object with 'name' and 'email'")
+                  else:
+                      if 'name' not in data['owner']:
+                          errors.append("marketplace.json: owner.name is required")
+                      if 'email' not in data['owner']:
+                          errors.append("marketplace.json: owner.email is required")
+                      elif 'email' in data['owner']:
+                          validate_email(data['owner']['email'], "marketplace.json owner")
+
+              # Version format
+              if 'version' in data:
+                  validate_semver(data['version'], "marketplace.json")
+
+              # Plugins array
+              if 'plugins' in data:
+                  if not isinstance(data['plugins'], list):
+                      errors.append("marketplace.json: 'plugins' must be an array")
+                  elif len(data['plugins']) == 0:
+                      errors.append("marketplace.json: 'plugins' array is empty")
+                  else:
+                      for i, plugin in enumerate(data['plugins']):
+                          ctx = f"marketplace.json plugins[{i}]"
+
+                          if 'name' not in plugin:
+                              errors.append(f"{ctx}: Missing 'name'")
+                          if 'source' not in plugin:
+                              errors.append(f"{ctx}: Missing 'source'")
+                          elif not plugin['source'].startswith('./'):
+                              errors.append(f"{ctx}: 'source' must start with './' (got '{plugin['source']}')")
+                          if 'description' not in plugin:
+                              warnings.append(f"{ctx}: Missing 'description'")
+
+              return data
+
+          def validate_plugin(plugin_path, expected_name=None):
+              """Validate individual plugin.json"""
+              plugin_json = Path(plugin_path) / '.claude-plugin' / 'plugin.json'
+
+              if not plugin_json.exists():
+                  errors.append(f"{plugin_path}: Missing .claude-plugin/plugin.json")
+                  return None
+
+              try:
+                  with open(plugin_json) as f:
+                      data = json.load(f)
+              except json.JSONDecodeError as e:
+                  errors.append(f"{plugin_json}: Invalid JSON - {e}")
+                  return None
+
+              ctx = str(plugin_json)
+
+              # Required fields
+              required = ['name', 'version', 'description', 'author']
+              for field in required:
+                  if field not in data:
+                      errors.append(f"{ctx}: Missing required field '{field}'")
+
+              # Name consistency
+              if expected_name and 'name' in data:
+                  if data['name'] != expected_name:
+                      errors.append(f"{ctx}: Plugin name '{data['name']}' doesn't match marketplace entry '{expected_name}'")
+
+              # Version format
+              if 'version' in data:
+                  validate_semver(data['version'], ctx)
+
+              # Author validation
+              if 'author' in data:
+                  if not isinstance(data['author'], dict):
+                      errors.append(f"{ctx}: 'author' must be an object")
+                  else:
+                      if 'name' not in data['author']:
+                          errors.append(f"{ctx}: author.name is required")
+                      if 'email' not in data['author']:
+                          errors.append(f"{ctx}: author.email is required")
+                      elif 'email' in data['author']:
+                          validate_email(data['author']['email'], ctx)
+
+              return data
+
+          def cross_validate(marketplace_data):
+              """Cross-validate marketplace and plugins"""
+              if not marketplace_data or 'plugins' not in marketplace_data:
+                  return
+
+              plugin_names = set()
+
+              for plugin in marketplace_data['plugins']:
+                  name = plugin.get('name')
+                  source = plugin.get('source', '')
+
+                  # Check for duplicates
+                  if name:
+                      if name in plugin_names:
+                          errors.append(f"Duplicate plugin name: '{name}'")
+                      plugin_names.add(name)
+
+                  # Check source directory exists
+                  if source:
+                      source_path = Path(source.lstrip('./'))
+                      if not source_path.exists():
+                          errors.append(f"Plugin '{name}': Source directory '{source}' does not exist")
+                      else:
+                          # Validate the plugin.json
+                          validate_plugin(source_path, expected_name=name)
+
+          # Run validation
+          print("=" * 60)
+          print("VALIDATING PLUGIN STRUCTURE")
+          print("=" * 60)
+
+          print("\n1. Validating marketplace.json...")
+          marketplace_data = validate_marketplace()
+
+          print("2. Cross-validating plugins...")
+          cross_validate(marketplace_data)
+
+          # Summary
+          print("\n" + "=" * 60)
+          print("VALIDATION SUMMARY")
+          print("=" * 60)
+
+          if warnings:
+              print(f"\nWarnings ({len(warnings)}):")
+              for w in warnings:
+                  print(f"  ⚠️  {w}")
+
+          if errors:
+              print(f"\nErrors ({len(errors)}):")
+              for e in errors:
+                  print(f"  ❌ {e}")
+
+              # Write errors to file for later use
+              with open('plugin_validation_errors.txt', 'w') as f:
+                  for e in errors:
+                      f.write(f"{e}\n")
+
+              # Write summary to GitHub output
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"has_errors=true\n")
+                  f.write(f"error_count={len(errors)}\n")
+
+              print(f"\n❌ Validation FAILED with {len(errors)} error(s)")
+              sys.exit(1)
+          else:
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"has_errors=false\n")
+                  f.write(f"error_count=0\n")
+
+              print("\n✅ All validations passed!")
+          EOF
+
+      - name: Create validation report
+        if: always()
+        run: |
+          cat > validation_report.md << 'EOF'
+          # Plugin Validation Report
+
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Trigger:** ${{ github.event_name }}
+          **Branch:** ${{ github.ref_name }}
+
+          ## Results
+
+          EOF
+
+          if [ -f plugin_validation_errors.txt ]; then
+            echo "### Errors Found" >> validation_report.md
+            echo '```' >> validation_report.md
+            cat plugin_validation_errors.txt >> validation_report.md
+            echo '```' >> validation_report.md
+          else
+            echo "✅ All validations passed!" >> validation_report.md
+          fi
+
+      - name: Create issue for validation failures (scheduled runs only)
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            let errorDetails = 'No error file found';
+            if (fs.existsSync('plugin_validation_errors.txt')) {
+              errorDetails = fs.readFileSync('plugin_validation_errors.txt', 'utf8');
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Plugin validation failures detected on ${today}`,
+              body: `## Plugin Validation Failures
+
+            The scheduled plugin validation check has found issues.
+
+            ### Errors
+
+            \`\`\`
+            ${errorDetails}
+            \`\`\`
+
+            ---
+
+            **Action Required:** Please fix the plugin structure issues above.
+
+            [View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+
+            *This issue was automatically created by the validate-plugins workflow.*`,
+              labels: ['auto-report', 'plugin-validation', 'needs-review']
+            });
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-validation-results
+          path: |
+            validation_report.md
+            plugin_validation_errors.txt
+          retention-days: 30
+          if-no-files-found: ignore

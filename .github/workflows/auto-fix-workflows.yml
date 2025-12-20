@@ -1,0 +1,433 @@
+name: Auto-Fix Failed Workflows
+
+on:
+  workflow_run:
+    workflows:
+      - "Validate Plugin Structure"
+      - "Validate Examples"
+    types:
+      - completed
+
+# Sequential processing to prevent conflicts
+concurrency:
+  group: auto-fix-workflows
+  cancel-in-progress: false
+
+jobs:
+  analyze-and-fix:
+    # Only run if workflow failed
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: write
+      pull-requests: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install anthropic
+
+      - name: Download workflow artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Get artifacts from failed workflow
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id
+            });
+
+            console.log(`Found ${artifacts.data.artifacts.length} artifacts`);
+
+            for (const artifact of artifacts.data.artifacts) {
+              console.log(`Downloading: ${artifact.name}`);
+
+              const download = await github.rest.actions.downloadArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+                archive_format: 'zip'
+              });
+
+              fs.writeFileSync(`${artifact.name}.zip`, Buffer.from(download.data));
+            }
+
+      - name: Extract artifacts
+        run: |
+          for f in *.zip; do
+            if [ -f "$f" ]; then
+              unzip -o "$f" -d artifacts/ || true
+            fi
+          done
+          ls -la artifacts/ 2>/dev/null || echo "No artifacts extracted"
+
+      - name: Get workflow logs
+        id: get-logs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Get failed jobs
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id
+            });
+
+            const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure');
+
+            let errorContext = `Workflow: ${context.payload.workflow_run.name}\n`;
+            errorContext += `Run ID: ${context.payload.workflow_run.id}\n`;
+            errorContext += `Failed Jobs: ${failedJobs.length}\n\n`;
+
+            for (const job of failedJobs) {
+              errorContext += `Job: ${job.name}\n`;
+
+              // Get annotations (error messages)
+              const annotations = await github.rest.checks.listAnnotations({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: job.id
+              });
+
+              for (const ann of annotations.data) {
+                errorContext += `  - ${ann.message}\n`;
+              }
+            }
+
+            // Add artifact content if available
+            if (fs.existsSync('artifacts/plugin_validation_errors.txt')) {
+              errorContext += '\nPlugin Validation Errors:\n';
+              errorContext += fs.readFileSync('artifacts/plugin_validation_errors.txt', 'utf8');
+            }
+
+            if (fs.existsSync('artifacts/validation_errors.txt')) {
+              errorContext += '\nCode Validation Errors:\n';
+              errorContext += fs.readFileSync('artifacts/validation_errors.txt', 'utf8');
+            }
+
+            fs.writeFileSync('error_context.txt', errorContext);
+            console.log(errorContext);
+
+            return errorContext;
+
+      - name: Analyze with Claude and generate fix
+        id: claude-fix
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python - <<'EOF'
+          import os
+          import json
+          import sys
+          from pathlib import Path
+          from anthropic import Anthropic
+
+          client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+          # Read error context
+          with open('error_context.txt') as f:
+              error_context = f.read()
+
+          # Read relevant files for context
+          files_context = ""
+
+          # marketplace.json
+          marketplace_path = Path('.claude-plugin/marketplace.json')
+          if marketplace_path.exists():
+              files_context += f"\n=== {marketplace_path} ===\n"
+              files_context += marketplace_path.read_text()
+
+          # All plugin.json files
+          for plugin_json in Path('claude').glob('*/.claude-plugin/plugin.json'):
+              files_context += f"\n=== {plugin_json} ===\n"
+              files_context += plugin_json.read_text()
+
+          prompt = f"""You are an expert at fixing Claude Code plugin structure issues.
+
+          A GitHub Actions workflow has failed with these errors:
+
+          {error_context}
+
+          Here are the current file contents:
+
+          {files_context}
+
+          Analyze the errors and provide a fix. Your response MUST be a JSON object with this structure:
+
+          {{
+            "analysis": "Brief explanation of what went wrong",
+            "confidence": 0-100 (how confident you are in the fix),
+            "changes": [
+              {{
+                "file": "path/to/file.json",
+                "action": "replace" or "create",
+                "content": "full new file content"
+              }}
+            ],
+            "commit_message": "fix: Short description of the fix"
+          }}
+
+          Guidelines:
+          - For marketplace.json: owner must be object with name/email, source paths must start with ./
+          - For plugin.json: required fields are name, version, description, author (object)
+          - Version must be semantic versioning (X.Y.Z)
+          - Only include files that need changes
+          - Set confidence to 90+ only if the fix is straightforward and certain
+          - Set confidence to 70-89 if fix is likely correct but should be reviewed
+          - Set confidence below 70 if unsure or complex changes needed
+
+          Respond with ONLY valid JSON, no markdown."""
+
+          try:
+              response = client.messages.create(
+                  model="claude-sonnet-4-5-20250929",
+                  max_tokens=4096,
+                  messages=[{"role": "user", "content": prompt}]
+              )
+
+              response_text = response.content[0].text.strip()
+
+              # Strip markdown fences if present
+              if response_text.startswith('```'):
+                  lines = response_text.split('\n')
+                  if lines[0].startswith('```'):
+                      lines = lines[1:]
+                  if lines and lines[-1].strip() == '```':
+                      lines = lines[:-1]
+                  response_text = '\n'.join(lines).strip()
+
+              fix_data = json.loads(response_text)
+
+              # Validate response structure
+              required = ['analysis', 'confidence', 'changes', 'commit_message']
+              if not all(k in fix_data for k in required):
+                  raise ValueError("Missing required fields in response")
+
+              # Save fix proposal
+              with open('fix_proposal.json', 'w') as f:
+                  json.dump(fix_data, f, indent=2)
+
+              confidence = fix_data['confidence']
+
+              print(f"Analysis: {fix_data['analysis']}")
+              print(f"Confidence: {confidence}%")
+              print(f"Changes: {len(fix_data['changes'])} file(s)")
+
+              # Write outputs
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"confidence={confidence}\n")
+                  f.write(f"has_fix=true\n")
+                  f.write(f"change_count={len(fix_data['changes'])}\n")
+
+          except Exception as e:
+              print(f"Error: {e}", file=sys.stderr)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"has_fix=false\n")
+                  f.write(f"confidence=0\n")
+              sys.exit(1)
+          EOF
+
+      - name: Apply fix and push to main (high confidence)
+        if: steps.claude-fix.outputs.has_fix == 'true' && steps.claude-fix.outputs.confidence >= 90
+        run: |
+          python - <<'EOF'
+          import json
+          from pathlib import Path
+
+          with open('fix_proposal.json') as f:
+              fix = json.load(f)
+
+          for change in fix['changes']:
+              file_path = Path(change['file'])
+              file_path.parent.mkdir(parents=True, exist_ok=True)
+              file_path.write_text(change['content'])
+              print(f"Updated: {file_path}")
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          COMMIT_MSG=$(python -c "import json; print(json.load(open('fix_proposal.json'))['commit_message'])")
+
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "$COMMIT_MSG
+
+          Auto-fixed by Claude with $(cat fix_proposal.json | python -c 'import sys,json; print(json.load(sys.stdin)["confidence"])')% confidence.
+
+          Workflow: ${{ github.event.workflow_run.name }}
+          Run: ${{ github.event.workflow_run.html_url }}
+
+          🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+          Co-Authored-By: Claude Sonnet <noreply@anthropic.com>"
+
+          git pull --rebase origin main
+          git push origin main
+
+          echo "✅ Fix pushed directly to main"
+
+      - name: Create PR (medium confidence)
+        if: steps.claude-fix.outputs.has_fix == 'true' && steps.claude-fix.outputs.confidence >= 70 && steps.claude-fix.outputs.confidence < 90
+        run: |
+          python - <<'EOF'
+          import json
+          from pathlib import Path
+
+          with open('fix_proposal.json') as f:
+              fix = json.load(f)
+
+          for change in fix['changes']:
+              file_path = Path(change['file'])
+              file_path.parent.mkdir(parents=True, exist_ok=True)
+              file_path.write_text(change['content'])
+              print(f"Updated: {file_path}")
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="auto-fix/workflow-$(date +%s)"
+          git checkout -b "$BRANCH"
+
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          COMMIT_MSG=$(python -c "import json; print(json.load(open('fix_proposal.json'))['commit_message'])")
+          ANALYSIS=$(python -c "import json; print(json.load(open('fix_proposal.json'))['analysis'])")
+          CONFIDENCE=$(python -c "import json; print(json.load(open('fix_proposal.json'))['confidence'])")
+
+          git commit -m "$COMMIT_MSG"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "$COMMIT_MSG" \
+            --body "## Auto-Fix Proposal
+
+          **Confidence:** ${CONFIDENCE}%
+
+          ### Analysis
+          ${ANALYSIS}
+
+          ### Context
+          - Workflow: ${{ github.event.workflow_run.name }}
+          - Run: ${{ github.event.workflow_run.html_url }}
+
+          ---
+
+          ⚠️ **This PR was automatically generated.** Please review before merging.
+
+          🤖 Generated with [Claude Code](https://claude.com/claude-code)" \
+            --label "automated-fix,needs-review"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create issue (low confidence)
+        if: steps.claude-fix.outputs.has_fix == 'true' && steps.claude-fix.outputs.confidence < 70
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const fix = JSON.parse(fs.readFileSync('fix_proposal.json', 'utf8'));
+
+            let changesText = '';
+            for (const change of fix.changes) {
+              changesText += `### ${change.file}\n\`\`\`json\n${change.content}\n\`\`\`\n\n`;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Manual review needed: ${fix.commit_message}`,
+              body: `## Workflow Fix Suggestion
+
+            **Confidence:** ${fix.confidence}% (below auto-fix threshold)
+
+            ### Analysis
+            ${fix.analysis}
+
+            ### Suggested Changes
+            ${changesText}
+
+            ### Context
+            - Failed Workflow: ${{ github.event.workflow_run.name }}
+            - Run: ${{ github.event.workflow_run.html_url }}
+
+            ---
+
+            ⚠️ **Low confidence fix** - requires manual review and implementation.
+
+            *This issue was automatically created by auto-fix-workflows.*`,
+              labels: ['auto-report', 'needs-manual-fix', 'low-confidence']
+            });
+
+      - name: Handle no fix available
+        if: steps.claude-fix.outputs.has_fix != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let errorContext = 'Unable to read error context';
+            if (fs.existsSync('error_context.txt')) {
+              errorContext = fs.readFileSync('error_context.txt', 'utf8');
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Workflow failure needs manual investigation: ${{ github.event.workflow_run.name }}`,
+              body: `## Workflow Failure
+
+            The auto-fix system was unable to generate a fix for this failure.
+
+            ### Error Context
+            \`\`\`
+            ${errorContext}
+            \`\`\`
+
+            ### Links
+            - Failed Run: ${{ github.event.workflow_run.html_url }}
+
+            ---
+
+            *This issue was automatically created by auto-fix-workflows.*`,
+              labels: ['auto-report', 'needs-manual-fix', 'automation-failed']
+            });
+
+      - name: Upload fix proposal artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-fix-proposal-${{ github.event.workflow_run.id }}
+          path: |
+            fix_proposal.json
+            error_context.txt
+          retention-days: 30
+          if-no-files-found: ignore
