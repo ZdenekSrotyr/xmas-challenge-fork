@@ -66,30 +66,33 @@ Follow SQL-first architecture patterns:
    - Always use fully qualified table names from `get_table_name()`
 
 2. **Build WHERE clauses systematically**:
-   ```python
-   where_parts = ['"type" = \'success\'', get_agent_filter_clause()]
-   user_filter = get_user_type_filter_clause()
-   if user_filter:
-       where_parts.append(user_filter)
-   where_clause = ' AND '.join(where_parts)
-   ```
+
+```python
+where_parts = ['"type" = \'success\'', get_agent_filter_clause()]
+user_filter = get_user_type_filter_clause()
+if user_filter:
+    where_parts.append(user_filter)
+where_clause = ' AND '.join(where_parts)
+```
 
 3. **Import filter functions in all page modules**:
-   ```python
-   from utils.data_loader import (
-       execute_aggregation_query,
-       get_table_name,
-       get_agent_filter_clause,
-       get_user_type_filter_clause,  # Add new filters here
-       get_selected_agent_name
-   )
-   ```
+
+```python
+from utils.data_loader import (
+    execute_aggregation_query,
+    get_table_name,
+    get_agent_filter_clause,
+    get_user_type_filter_clause,  # Add new filters here
+    get_selected_agent_name
+)
+```
 
 4. **Update session state initialization**:
-   ```python
-   if 'filter_name' not in st.session_state:
-       st.session_state.filter_name = 'default_value'
-   ```
+
+```python
+if 'filter_name' not in st.session_state:
+    st.session_state.filter_name = 'default_value'
+```
 
 5. **Avoid variable name conflicts**:
    - Use unique session state keys (e.g., `local_user_type_filter` vs `user_type_filter`)

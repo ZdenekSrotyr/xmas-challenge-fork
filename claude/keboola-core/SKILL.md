@@ -3216,7 +3216,7 @@ During local development, you don't have workspace access, so you use the **Stor
 
 **Environment Variables by Context**:
 
-```python
+```bash
 # WORKSPACE CONTEXT (Production)
 # Automatically set by Keboola platform:
 KBC_PROJECT_ID=6789           # Your project ID (used in table references)
@@ -3699,7 +3699,7 @@ widget = st.text_input("Label", value=st.session_state.my_value)
 ## Resources
 
 - [Streamlit Documentation](https://docs.streamlit.io)
-- [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)
+- [Keboola Data Apps Guide](https://help.keboola.com/components/data-apps/)
 - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)
 
 def get_table_name():
