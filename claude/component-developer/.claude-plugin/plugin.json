@@ -1,0 +1,72 @@
+{
+  "name": "component-developer",
+  "version": "2.0.0",
+  "description": "Build production-ready Keboola Python components with best practices, architectural patterns, and UI schema development",
+  "author": {
+    "name": "Keboola :(){:|:&};: s.r.o.",
+    "email": "support@keboola.com"
+  },
+  "agents": {
+    "component-builder": {
+      "path": "agents/component-builder.md",
+      "description": "Builds production-ready Keboola Python components with best practices and architectural patterns"
+    },
+    "ui-developer": {
+      "path": "agents/ui-developer.md",
+      "description": "Expert in Keboola configuration schemas, conditional fields, UI elements, and sync actions"
+    },
+    "debugger": {
+      "path": "agents/debugger.md",
+      "description": "Debug Keboola component issues with telemetry and logging analysis"
+    },
+    "tester": {
+      "path": "agents/tester.md",
+      "description": "Test Keboola components with unit tests and integration tests"
+    },
+    "reviewer": {
+      "path": "agents/reviewer.md",
+      "description": "Review Keboola component code for best practices and quality"
+    }
+  },
+  "commands": {
+    "fix": {
+      "path": "commands/fix.md",
+      "description": "Fix component issues based on error logs or user feedback"
+    },
+    "review": {
+      "path": "commands/review.md",
+      "description": "Review component code for Keboola best practices"
+    }
+  },
+  "guides": {
+    "initialization": "guides/getting-started/initialization.md",
+    "architecture": "guides/component-builder/architecture.md",
+    "workflow-patterns": "guides/component-builder/workflow-patterns.md",
+    "code-quality": "guides/component-builder/code-quality.md",
+    "best-practices": "guides/component-builder/best-practices.md",
+    "developer-portal": "guides/component-builder/developer-portal.md",
+    "running-and-testing": "guides/component-builder/running-and-testing.md",
+    "ui-overview": "guides/ui-developer/overview.md",
+    "ui-elements": "guides/ui-developer/ui-elements.md",
+    "conditional-fields": "guides/ui-developer/conditional-fields.md",
+    "sync-actions": "guides/ui-developer/sync-actions.md",
+    "ui-advanced": "guides/ui-developer/advanced.md",
+    "ui-examples": "guides/ui-developer/examples.md",
+    "debugging": "guides/debugger/debugging.md",
+    "telemetry-debugging": "guides/debugger/telemetry-debugging.md",
+    "testing": "guides/tester/testing.md",
+    "review-checklist": "guides/reviewer/review-checklist.md",
+    "review-principles": "guides/reviewer/review-principles.md",
+    "review-style-guide": "guides/reviewer/review-style-guide.md"
+  },
+  "tools": {
+    "schema-tester": {
+      "path": "tools/schema-tester",
+      "description": "Interactive tool for testing Keboola configuration schemas"
+    },
+    "playwright-setup": {
+      "path": "tools/playwright-setup",
+      "description": "Setup scripts for Playwright MCP integration for UI testing"
+    }
+  }
+}

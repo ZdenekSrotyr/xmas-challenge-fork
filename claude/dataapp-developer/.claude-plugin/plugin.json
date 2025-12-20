@@ -1,0 +1,22 @@
+{
+  "name": "dataapp-developer",
+  "version": "1.0.0",
+  "description": "Build Streamlit data apps for Keboola with best practices and templates",
+  "author": {
+    "name": "Keboola :(){:|:&};: s.r.o.",
+    "email": "support@keboola.com"
+  },
+  "skills": {
+    "dataapp-dev": {
+      "path": "skills/dataapp-dev/SKILL.md",
+      "description": "Build Streamlit data apps for Keboola platform"
+    }
+  },
+  "guides": {
+    "quickstart": "skills/dataapp-dev/QUICKSTART.md",
+    "best-practices": "skills/dataapp-dev/best-practices.md",
+    "templates": "skills/dataapp-dev/templates.md",
+    "validation-checklist": "skills/dataapp-dev/validation-checklist.md",
+    "workflow-guide": "skills/dataapp-dev/workflow-guide.md"
+  }
+}
