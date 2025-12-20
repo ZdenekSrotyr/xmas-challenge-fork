@@ -101,11 +101,12 @@ class KnowledgeGraph:
             "updated_at": row["updated_at"]
         }
 
-    def update_node(self, node_id: str, **properties):
-        """Update node properties."""
+    def update_node(self, node_id: str, **properties) -> bool:
+        """Update node properties. Returns False if node doesn't exist."""
         node = self.get_node(node_id)
         if node is None:
-            raise ValueError(f"Node not found: {node_id}")
+            print(f"⚠️ Node not found: {node_id} (skipping update)")
+            return False
 
         # Merge properties
         current_props = node["properties"]
@@ -118,6 +119,7 @@ class KnowledgeGraph:
         """, (json.dumps(current_props), node_id))
 
         self.conn.commit()
+        return True
 
     def add_edge(self, from_id: str, to_id: str, relationship: str, **properties):
         """
