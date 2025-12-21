@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-21T07:31:25.345414
+> Generated: 2025-12-21T08:50:47.553266
 
 ---
 
@@ -3740,7 +3740,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-21T07:31:25.345414",
+  "generated_at": "2025-12-21T08:50:47.553266",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
