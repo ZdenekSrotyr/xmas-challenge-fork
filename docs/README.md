@@ -1,177 +1,134 @@
-# Documentation Source
+# Contributing to Documentation
 
-> **⚠️ POC**: This is the single source of truth for all LLM skills
+> **This is the source of truth** - Edit only files in `docs/` folder.
 
-## Overview
+## Quick Rules
 
-This directory contains the **canonical documentation** for Keboola platform knowledge.
-All skills for different LLMs (Claude, Gemini, etc.) are **automatically generated** from these files.
+| Do | Don't |
+|----|-------|
+| Edit files in `docs/` | Edit files in `claude/` or `gemini/` |
+| Use numbered prefixes (`01-`, `02-`) | Use random file names |
+| Include valid code examples | Copy-paste untested code |
+| Push to main | Create feature branches for docs |
 
-## Structure
+## Setup (for maintainers)
+
+### 1. Add Anthropic API Key
+
+Required for AI-powered workflows:
+
+1. Get API key from https://console.anthropic.com/settings/keys
+2. Go to repo Settings > Secrets and variables > Actions
+3. Add secret: `ANTHROPIC_API_KEY` = `sk-ant-...`
+
+### 2. Enable GitHub Pages
+
+1. Go to Settings > Pages
+2. Source: Deploy from branch
+3. Branch: `main`, folder: `/automation/web`
+
+## Writing Documentation
+
+### File Structure
 
 ```
 docs/
+├── INDEX.md              ← Navigation (start here)
+├── README.md             ← This file (how to contribute)
+├── workflows.md          ← Visual workflow diagrams
 └── keboola/
-    ├── 01-core-concepts.md      # Fundamental concepts
-    ├── 02-storage-api.md         # Storage API usage
-    └── 03-common-pitfalls.md     # Common mistakes
+    ├── 01-core-concepts.md
+    ├── 02-storage-api.md
+    ├── 03-common-pitfalls.md
+    ├── 04-component-development.md
+    └── 05-dataapp-development.md
 ```
 
-## How It Works
+### Naming Convention
 
-1. **Edit docs here** - This is the only place to edit documentation
-2. **Commit and push** - Push changes to main branch
-3. **Auto-generate** - Workflows automatically generate skills:
-   - `sync-claude-skills.yml` → `claude/`
-   - `sync-gemini-skills.yml` → `gemini/`
-
-## DO NOT Edit Skills Directly
-
-```
-❌ DO NOT EDIT: claude/keboola-core/SKILL.md
-❌ DO NOT EDIT: gemini/keboola-core/skill.yaml
-
-✅ EDIT HERE: docs/keboola/*.md
-```
-
-Skills are regenerated on every docs/ commit, so manual edits will be overwritten.
-
-## Writing Guidelines
-
-### File Naming
 - Use numbers for ordering: `01-`, `02-`, `03-`
 - Use kebab-case: `core-concepts.md`, not `CoreConcepts.md`
 - Be descriptive: `storage-api.md`, not `api.md`
 
-### Content Structure
+### Code Examples
 
-#### Headings
-```markdown
-# Main Topic         (H1 - one per file)
-## Section          (H2 - major sections)
-### Subsection      (H3 - details)
-```
+Always specify language and test your code:
 
-#### Code Blocks
-Always specify language:
 ```markdown
 ```python
-import requests
-# Code here
+import os
+token = os.environ["KBC_TOKEN"]  # Never hardcode!
 ```
 ```
 
-#### Examples
-Show both ❌ wrong and ✅ correct:
+Show both wrong and correct approaches:
+
 ```markdown
-## Common Mistake
-
-❌ **Wrong:**
+**Wrong:**
 ```python
 url = "hardcoded.com"
 ```
 
-✅ **Correct:**
+**Correct:**
 ```python
 url = os.environ["URL"]
 ```
 ```
 
-### Code Quality
+## How Auto-Sync Works
 
-All Python examples must:
-- Be syntactically valid
-- Use environment variables for secrets
-- Include error handling
-- Have comments explaining key points
+```
+docs/ changed → sync-claude-skills.yml → claude/keboola-core/SKILL.md
+            → sync-gemini-skills.yml → gemini/keboola-core/skill.yaml
+```
 
-**Why:** The `validate-docs.yml` workflow checks all code blocks for syntax errors.
+Skills regenerate automatically on every push to `docs/`.
 
 ## Validation
 
-Before committing, you can run validation locally:
-
-```bash
-# Validate all docs
-python scripts/validators/markdown_validator.py docs/
-
-# Check Python syntax
-python scripts/validators/code_validator.py docs/
-
-# Test generators
-python scripts/generators/claude_generator.py \
-  --input docs/keboola/ \
-  --output /tmp/test-skill.md
-```
-
-## Self-Healing
+The system validates:
+- Python syntax in code blocks
+- Links (no 404s)
+- Required fields in JSON schemas
 
 If validation fails:
-1. GitHub Actions creates an issue
-2. Claude analyzes and categorizes it
-3. Claude proposes a fix PR
-4. Human reviews and merges
-5. Skills automatically regenerate
+1. Issue is created automatically
+2. AI proposes a fix
+3. Fix is merged (if confidence ≥90%) or reviewed
 
 ## Adding New Documentation
 
-To add a new topic:
-
 ```bash
-# 1. Create new file
-cat > docs/keboola/04-new-topic.md << 'EOF'
+# 1. Create file with number prefix
+cat > docs/keboola/06-new-topic.md << 'EOF'
 # New Topic
 
 Content here...
 EOF
 
-# 2. Commit
-git add docs/keboola/04-new-topic.md
+# 2. Commit and push
+git add docs/keboola/06-new-topic.md
 git commit -m "docs: Add new topic"
-git push
+git push origin main
 
-# 3. Skills auto-generate (no action needed)
+# 3. Skills auto-regenerate (no action needed)
 ```
 
-The workflows will detect the new file and include it in the next skill generation.
+## Reporting Issues
 
-## Multi-LLM Support
+Found a knowledge gap? Create an issue:
 
-Each LLM gets documentation in its native format:
+```bash
+gh issue create \
+  --title "Missing: Rate limits documentation" \
+  --body "Agent didn't know about rate limits" \
+  --label "auto-report"
+```
 
-| LLM    | Format | Location |
-|--------|--------|----------|
-| Claude | Markdown | `claude/keboola-core/SKILL.md` |
-| Gemini | YAML | `gemini/keboola-core/skill.yaml` |
+The system will auto-triage and propose a fix.
 
-The content is the same, just formatted differently.
+## Related
 
-## FAQ
-
-### Q: Can I edit skills directly?
-**A:** No. Always edit `docs/`. Skills regenerate automatically.
-
-### Q: How long does generation take?
-**A:** Usually < 30 seconds after pushing to main.
-
-### Q: What if I break something?
-**A:** The validation workflow will catch it and create an issue. The self-healing system will propose a fix.
-
-### Q: Can I add images or diagrams?
-**A:** Yes, but store them in `docs/images/` and reference with relative paths.
-
-### Q: How do I test changes locally?
-**A:** Run the generators manually (see Validation section above).
-
-## Related Workflows
-
-- `.github/workflows/validate-docs.yml` - Validates on every push
-- `.github/workflows/sync-claude-skills.yml` - Claude skill generation
-- `.github/workflows/sync-gemini-skills.yml` - Gemini skill generation
-- `.github/workflows/auto-triage.yml` - Self-healing triage
-- `.github/workflows/propose-fix.yml` - Self-healing PR generation
-
----
-
-**Remember**: This is a POC demonstrating multi-LLM knowledge management.
-In production, this would connect to upstream repositories and have more robust validation.
+- [INDEX.md](INDEX.md) - Documentation navigation
+- [workflows.md](workflows.md) - Visual workflow diagrams
+- [Learning System](../automation/learning/README.md) - How learning capture works
