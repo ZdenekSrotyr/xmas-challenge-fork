@@ -1,9 +1,22 @@
 {
   "name": "dataapp-developer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Build Streamlit data apps for Keboola with best practices and templates",
   "author": {
     "name": "Keboola :(){:|:&};: s.r.o.",
     "email": "support@keboola.com"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/learning-capture.sh"
+          }
+        ]
+      }
+    ]
   }
 }

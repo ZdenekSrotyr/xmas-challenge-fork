@@ -1,9 +1,22 @@
 {
   "name": "component-developer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Build production-ready Keboola Python components with best practices, architectural patterns, and UI schema development",
   "author": {
     "name": "Keboola :(){:|:&};: s.r.o.",
     "email": "support@keboola.com"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/learning-capture.sh"
+          }
+        ]
+      }
+    ]
   }
 }

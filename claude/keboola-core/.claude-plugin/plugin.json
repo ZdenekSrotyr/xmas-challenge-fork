@@ -1,9 +1,22 @@
 {
   "name": "keboola-core",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Core Keboola platform knowledge - Storage API, Jobs API, Custom Python, Flows",
   "author": {
     "name": "Keboola :(){:|:&};: s.r.o.",
     "email": "support@keboola.com"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/learning-capture.sh"
+          }
+        ]
+      }
+    ]
   }
 }
