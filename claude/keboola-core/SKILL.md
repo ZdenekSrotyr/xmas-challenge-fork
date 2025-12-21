@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-18T13:56:51.728416
+> Generated: 2025-12-21T07:31:25.345414
 
 ---
 
@@ -3216,7 +3216,7 @@ During local development, you don't have workspace access, so you use the **Stor
 
 **Environment Variables by Context**:
 
-```bash
+```python
 # WORKSPACE CONTEXT (Production)
 # Automatically set by Keboola platform:
 KBC_PROJECT_ID=6789           # Your project ID (used in table references)
@@ -3699,7 +3699,7 @@ widget = st.text_input("Label", value=st.session_state.my_value)
 ## Resources
 
 - [Streamlit Documentation](https://docs.streamlit.io)
-- [Keboola Data Apps Guide](https://help.keboola.com/components/data-apps/)
+- [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)
 - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)
 
 def get_table_name():
@@ -3740,7 +3740,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-18T13:56:51.728416",
+  "generated_at": "2025-12-21T07:31:25.345414",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
