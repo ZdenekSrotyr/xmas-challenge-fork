@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T13:50:44.385124'
+  generated_at: '2025-12-22T14:21:22.937899'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -1174,10 +1174,31 @@ knowledge_base:
     Run tests:\n\n```bash\n# Using unittest\npython -m unittest discover -s tests\n\
     \n# Using pytest\npytest tests/ -v --cov=src\n```\n\n## Code Quality\n\nUse Ruff\
     \ for code formatting and linting:\n\n```bash\n# Format code\nruff format .\n\n\
-    # Lint and auto-fix issues\nruff check --fix .\n```\n\n## Resources\n\n- [Keboola\
-    \ Developer Docs](https://developers.keboola.com/)\n- [Python Component Library](https://github.com/keboola/python-component)\n\
-    - [Component Tutorial](https://developers.keboola.com/extend/component/tutorial/)\n\
-    - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)\n"
+    # Lint and auto-fix issues\nruff check --fix .\n```\n\n## Testing Workflows\n\n\
+    ### GitHub Actions Integration\n\nComponents should include automated testing\
+    \ workflows that trigger on pull requests and pushes:\n\n```yaml\n# .github/workflows/test.yml\n\
+    name: Test Component\n\non:\n  pull_request:\n    branches: [ main ]\n  push:\n\
+    \    branches: [ main ]\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n\
+    \      - uses: actions/checkout@v3\n      \n      - name: Set up Python\n    \
+    \    uses: actions/setup-python@v4\n        with:\n          python-version: '3.11'\n\
+    \      \n      - name: Install dependencies\n        run: |\n          pip install\
+    \ -e .\n          pip install pytest pytest-cov\n      \n      - name: Run tests\n\
+    \        run: pytest tests/ -v --cov=src\n      \n      - name: Check code quality\n\
+    \        run: |\n          pip install ruff\n          ruff check .\n        \
+    \  ruff format --check .\n```\n\n### Workflow Triggers\n\n**workflow_run trigger**:\
+    \ Use for chaining workflows that depend on other workflow results\n\n```yaml\n\
+    # Trigger AI review after tests pass\non:\n  workflow_run:\n    workflows: [\"\
+    Test Component\"]\n    types: [completed]\n    branches: [main]\n```\n\n**pull_request\
+    \ trigger**: Use for immediate PR validation\n\n```yaml\n# Run tests on every\
+    \ PR\non:\n  pull_request:\n    branches: [ main ]\n```\n\n**Best Practices**:\n\
+    - Use `workflow_run` for dependent workflows (e.g., deploy after tests pass)\n\
+    - Use `pull_request` for immediate feedback (e.g., linting, unit tests)\n- Always\
+    \ check `workflow_run.conclusion == 'success'` before proceeding\n- Add status\
+    \ checks to protect main branch\n\n## Resources\n\n- [Keboola Developer Docs](https://developers.keboola.com/)\n\
+    - [Python Component Library](https://github.com/keboola/python-component)\n- [Component\
+    \ Tutorial](https://developers.keboola.com/extend/component/tutorial/)\n- [Cookiecutter\
+    \ Template](https://github.com/keboola/cookiecutter-python-component)\n- [GitHub\
+    \ Actions Documentation](https://docs.github.com/en/actions)\n"
   format: markdown
 - source: 05-dataapp-development.md
   content: "# Data App Development\n\n## Overview\n\nKeboola Data Apps are Streamlit\

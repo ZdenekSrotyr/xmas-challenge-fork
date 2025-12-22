@@ -486,9 +486,80 @@ ruff format .
 ruff check --fix .
 ```
 
+## Testing Workflows
+
+### GitHub Actions Integration
+
+Components should include automated testing workflows that trigger on pull requests and pushes:
+
+```yaml
+# .github/workflows/test.yml
+name: Test Component
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pytest pytest-cov
+      
+      - name: Run tests
+        run: pytest tests/ -v --cov=src
+      
+      - name: Check code quality
+        run: |
+          pip install ruff
+          ruff check .
+          ruff format --check .
+```
+
+### Workflow Triggers
+
+**workflow_run trigger**: Use for chaining workflows that depend on other workflow results
+
+```yaml
+# Trigger AI review after tests pass
+on:
+  workflow_run:
+    workflows: ["Test Component"]
+    types: [completed]
+    branches: [main]
+```
+
+**pull_request trigger**: Use for immediate PR validation
+
+```yaml
+# Run tests on every PR
+on:
+  pull_request:
+    branches: [ main ]
+```
+
+**Best Practices**:
+- Use `workflow_run` for dependent workflows (e.g., deploy after tests pass)
+- Use `pull_request` for immediate feedback (e.g., linting, unit tests)
+- Always check `workflow_run.conclusion == 'success'` before proceeding
+- Add status checks to protect main branch
+
 ## Resources
 
 - [Keboola Developer Docs](https://developers.keboola.com/)
 - [Python Component Library](https://github.com/keboola/python-component)
 - [Component Tutorial](https://developers.keboola.com/extend/component/tutorial/)
 - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
