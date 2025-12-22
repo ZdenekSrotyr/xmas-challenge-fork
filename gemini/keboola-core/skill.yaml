@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T07:11:25.017753'
+  generated_at: '2025-12-22T07:13:18.278993'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -1201,7 +1201,7 @@ knowledge_base:
     \ your project data is mirrored. This provides:\n- Direct SQL access (fast queries)\n\
     - No API rate limits\n- Native database features\n\nDuring local development,\
     \ you don't have workspace access, so you use the **Storage API** (REST) to export\
-    \ data.\n\n**Environment Variables by Context**:\n\n```python\n# WORKSPACE CONTEXT\
+    \ data.\n\n**Environment Variables by Context**:\n\n```bash\n# WORKSPACE CONTEXT\
     \ (Production)\n# Automatically set by Keboola platform:\nKBC_PROJECT_ID=6789\
     \           # Your project ID (used in table references)\nKBC_BUCKET_ID=in.c-main\
     \       # Default bucket for app\nKBC_TABLE_NAME=customers      # Default table\
