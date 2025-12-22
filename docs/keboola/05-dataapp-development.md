@@ -69,7 +69,7 @@ During local development, you don't have workspace access, so you use the **Stor
 
 **Environment Variables by Context**:
 
-```python
+```bash
 # WORKSPACE CONTEXT (Production)
 # Automatically set by Keboola platform:
 KBC_PROJECT_ID=6789           # Your project ID (used in table references)
