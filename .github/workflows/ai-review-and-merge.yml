@@ -1,8 +1,10 @@
 name: AI Review and Auto-Merge
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # Trigger when propose-fix workflow completes (avoids GITHUB_TOKEN limitation)
+  workflow_run:
+    workflows: ["Propose Fix"]
+    types: [completed]
 
 permissions:
   contents: write
@@ -13,10 +15,8 @@ permissions:
 jobs:
   ai-review:
     runs-on: ubuntu-latest
-    # Only run for PRs from github-actions bot (propose-fix generated)
-    if: |
-      (github.event.pull_request.user.login == 'github-actions[bot]' ||
-       github.event.pull_request.user.login == 'app/github-actions')
+    # Only run if propose-fix succeeded
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Checkout repository
@@ -24,39 +24,95 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Find PR created by propose-fix
+        id: find-pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get the workflow run that triggered us
+            const runId = context.payload.workflow_run.id;
+            const headBranch = context.payload.workflow_run.head_branch;
+
+            console.log(`Triggered by workflow run ${runId} on branch ${headBranch}`);
+
+            // Find open PRs from fix/* branches created by github-actions
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              sort: 'created',
+              direction: 'desc',
+              per_page: 10
+            });
+
+            // Find the most recent PR from a fix/ branch by github-actions
+            const targetPR = prs.find(pr =>
+              pr.head.ref.startsWith('fix/') &&
+              (pr.user.login === 'github-actions[bot]' || pr.user.type === 'Bot')
+            );
+
+            if (!targetPR) {
+              console.log('No matching PR found from propose-fix workflow');
+              core.setOutput('found', 'false');
+              return;
+            }
+
+            console.log(`Found PR #${targetPR.number}: ${targetPR.title}`);
+            core.setOutput('found', 'true');
+            core.setOutput('pr_number', targetPR.number);
+            core.setOutput('pr_branch', targetPR.head.ref);
+
+            return targetPR;
+
+      - name: Exit if no PR found
+        if: steps.find-pr.outputs.found != 'true'
+        run: |
+          echo "No PR found to review. This can happen if:"
+          echo "  - propose-fix didn't create a PR"
+          echo "  - PR was already merged/closed"
+          echo "Exiting gracefully."
+          exit 0
+
       - name: Set up Python
+        if: steps.find-pr.outputs.found == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
+        if: steps.find-pr.outputs.found == 'true'
         run: |
           pip install --upgrade pip
           pip install anthropic requests
 
       - name: Get PR details
         id: pr-details
+        if: steps.find-pr.outputs.found == 'true'
         uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
         with:
           script: |
+            const prNumber = parseInt(process.env.PR_NUMBER);
+
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number
+              pull_number: prNumber
             });
 
             // Get files changed
             const files = await github.rest.pulls.listFiles({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number
+              pull_number: prNumber
             });
 
             // Get diff
             const diff = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number,
+              pull_number: prNumber,
               mediaType: {
                 format: 'diff'
               }
@@ -88,8 +144,10 @@ jobs:
             // Write to files for Python script
             const fs = require('fs');
             fs.writeFileSync('pr-data.json', JSON.stringify({
+              number: prNumber,
               title: pr.data.title,
               body: pr.data.body,
+              branch: pr.data.head.ref,
               files: files.data.map(f => ({
                 filename: f.filename,
                 status: f.status,
@@ -106,11 +164,13 @@ jobs:
             // Output for next steps
             core.setOutput('iteration', currentIteration);
             core.setOutput('issue_number', issueNumber);
+            core.setOutput('pr_body', pr.data.body);
 
             return pr.data;
 
       - name: AI Review with Claude
         id: ai-review
+        if: steps.find-pr.outputs.found == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -273,8 +333,10 @@ jobs:
           EOF
 
       - name: Post AI Review Comment
+        if: steps.find-pr.outputs.found == 'true'
         uses: actions/github-script@v7
         env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
           DECISION: ${{ steps.ai-review.outputs.decision }}
           CONFIDENCE: ${{ steps.ai-review.outputs.confidence }}
           REASONING: ${{ steps.ai-review.outputs.reasoning }}
@@ -283,6 +345,7 @@ jobs:
           QUALITY: ${{ steps.ai-review.outputs.quality_score }}
         with:
           script: |
+            const prNumber = parseInt(process.env.PR_NUMBER);
             const decision = process.env.DECISION;
             const confidence = parseInt(process.env.CONFIDENCE);
             const reasoning = process.env.REASONING;
@@ -346,31 +409,35 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: prNumber,
               body: comment
             });
 
       - name: Auto-merge if approved
-        if: steps.ai-review.outputs.decision == 'MERGE'
+        if: steps.find-pr.outputs.found == 'true' && steps.ai-review.outputs.decision == 'MERGE'
+        env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "✅ AI approved - merging PR"
-          gh pr merge ${{ github.event.pull_request.number }} \
+          echo "✅ AI approved - merging PR #$PR_NUMBER"
+          gh pr merge $PR_NUMBER \
             --squash \
             --delete-branch \
             --repo ${{ github.repository }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Request improvements from AI
-        if: steps.ai-review.outputs.decision == 'REQUEST_CHANGES'
+        if: steps.find-pr.outputs.found == 'true' && steps.ai-review.outputs.decision == 'REQUEST_CHANGES'
         uses: actions/github-script@v7
         env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+          PR_BRANCH: ${{ steps.find-pr.outputs.pr_branch }}
           ISSUE_NUMBER: ${{ steps.pr-details.outputs.issue_number }}
           CURRENT_ITERATION: ${{ steps.pr-details.outputs.iteration }}
           IMPROVEMENT_SUGGESTIONS: ${{ steps.ai-review.outputs.improvement_suggestions }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
           script: |
+            const prNumber = parseInt(process.env.PR_NUMBER);
+            const prBranch = process.env.PR_BRANCH;
             const issueNumber = process.env.ISSUE_NUMBER;
             const currentIteration = parseInt(process.env.CURRENT_ITERATION);
             const nextIteration = currentIteration + 1;
@@ -414,7 +481,7 @@ jobs:
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: issueNumber,
+              issue_number: parseInt(issueNumber),
               labels: [labelName]
             });
 
@@ -422,27 +489,26 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: prNumber,
               body: `🔄 Closing this PR to generate improved version based on AI feedback.\n\n**Iteration ${nextIteration} will address:**\n${suggestions.map(s => `- ${s}`).join('\n')}`
             });
 
             await github.rest.pulls.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number,
+              pull_number: prNumber,
               state: 'closed'
             });
 
             // Delete the branch
-            const prData = context.payload.pull_request;
-            if (prData.head.ref && prData.head.repo.full_name === context.payload.repository.full_name) {
+            if (prBranch) {
               try {
                 await github.rest.git.deleteRef({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  ref: `heads/${prData.head.ref}`
+                  ref: `heads/${prBranch}`
                 });
-                console.log(`✅ Deleted branch: ${prData.head.ref}`);
+                console.log(`✅ Deleted branch: ${prBranch}`);
               } catch (e) {
                 console.log(`⚠️ Could not delete branch: ${e.message}`);
               }
@@ -455,7 +521,7 @@ jobs:
             const issue = await github.rest.issues.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: issueNumber
+              issue_number: parseInt(issueNumber)
             });
 
             // Find category label (format: category:xxx)
@@ -485,13 +551,15 @@ jobs:
             console.log(`✅ Triggered propose-fix with iteration ${nextIteration} feedback`);
 
       - name: Add labels based on decision
-        if: steps.ai-review.outputs.decision != 'REQUEST_CHANGES'
+        if: steps.find-pr.outputs.found == 'true' && steps.ai-review.outputs.decision != 'REQUEST_CHANGES'
         uses: actions/github-script@v7
         env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
           DECISION: ${{ steps.ai-review.outputs.decision }}
           CURRENT_ITERATION: ${{ steps.pr-details.outputs.iteration }}
         with:
           script: |
+            const prNumber = parseInt(process.env.PR_NUMBER);
             const decision = process.env.DECISION;
             const currentIteration = parseInt(process.env.CURRENT_ITERATION);
 
@@ -516,19 +584,22 @@ jobs:
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: prNumber,
               labels: labels
             });
 
       - name: Close related issue if merged
-        if: steps.ai-review.outputs.decision == 'MERGE'
+        if: steps.find-pr.outputs.found == 'true' && steps.ai-review.outputs.decision == 'MERGE'
         uses: actions/github-script@v7
         env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
           CURRENT_ITERATION: ${{ steps.pr-details.outputs.iteration }}
           CONFIDENCE: ${{ steps.ai-review.outputs.confidence }}
+          PR_BODY: ${{ steps.pr-details.outputs.pr_body }}
         with:
           script: |
-            const prBody = context.payload.pull_request.body || '';
+            const prNumber = parseInt(process.env.PR_NUMBER);
+            const prBody = process.env.PR_BODY || '';
             const currentIteration = parseInt(process.env.CURRENT_ITERATION);
             const confidence = parseInt(process.env.CONFIDENCE);
 
@@ -538,7 +609,7 @@ jobs:
             if (issueMatch) {
               const issueNumber = parseInt(issueMatch[1]);
 
-              let message = `✅ Automaticky vyřešeno a mergnuté v PR #${context.issue.number}\n\n`;
+              let message = `✅ Automaticky vyřešeno a mergnuté v PR #${prNumber}\n\n`;
               message += `🤖 AI Review schválilo změny s ${confidence}% důvěrou.`;
 
               if (currentIteration > 0) {
@@ -563,10 +634,10 @@ jobs:
             }
 
       - name: Upload review artifact
-        if: always()
+        if: always() && steps.find-pr.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ai-review-${{ github.event.pull_request.number }}
+          name: ai-review-${{ steps.find-pr.outputs.pr_number }}
           path: |
             ai-review.json
             pr-data.json
