@@ -247,19 +247,23 @@ class DocsExporter:
             docs.append(doc)
             total_commits += len(history)
 
-        # Calculate statistics
-        all_commits = []
+        # Calculate statistics - deduplicate commits by hash
+        seen_hashes = set()
+        unique_commits = []
         for doc in docs:
-            all_commits.extend(doc['history'])
+            for commit in doc['history']:
+                if commit['hash'] not in seen_hashes:
+                    seen_hashes.add(commit['hash'])
+                    unique_commits.append(commit)
 
         # Sort by date descending
-        all_commits.sort(key=lambda c: c['date'], reverse=True)
+        unique_commits.sort(key=lambda c: c['date'], reverse=True)
 
-        # Get recent changes (last 10 commits across all files)
-        recent_changes = all_commits[:10]
+        # Get recent changes (last 10 unique commits across all files)
+        recent_changes = unique_commits[:10]
 
         # Get unique authors
-        authors = set(c['author'] for c in all_commits)
+        authors = set(c['author'] for c in unique_commits)
 
         result = {
             'docs': docs,
