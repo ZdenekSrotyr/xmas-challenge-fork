@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T13:50:44.385124'
+  generated_at: '2025-12-22T14:17:51.361023'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -1172,12 +1172,32 @@ knowledge_base:
     \    # Test implementation\n\n    def test_state_management(self):\n        \"\
     \"\"Test state file persistence.\"\"\"\n        # Test implementation\n```\n\n\
     Run tests:\n\n```bash\n# Using unittest\npython -m unittest discover -s tests\n\
-    \n# Using pytest\npytest tests/ -v --cov=src\n```\n\n## Code Quality\n\nUse Ruff\
-    \ for code formatting and linting:\n\n```bash\n# Format code\nruff format .\n\n\
-    # Lint and auto-fix issues\nruff check --fix .\n```\n\n## Resources\n\n- [Keboola\
-    \ Developer Docs](https://developers.keboola.com/)\n- [Python Component Library](https://github.com/keboola/python-component)\n\
-    - [Component Tutorial](https://developers.keboola.com/extend/component/tutorial/)\n\
-    - [Cookiecutter Template](https://github.com/keboola/cookiecutter-python-component)\n"
+    \n# Using pytest\npytest tests/ -v --cov=src\n```\n\n### Testing GitHub Actions\
+    \ Workflows\n\nWhen developing components with CI/CD pipelines, test your workflows\
+    \ properly:\n\n**Test workflow triggers locally** using [act](https://github.com/nektos/act):\n\
+    \n```bash\n# Install act\nbrew install act  # macOS\n# or: curl https://raw.githubusercontent.com/nektos/act/master/install.sh\
+    \ | sudo bash\n\n# Test push workflow\nact push\n\n# Test pull_request workflow\n\
+    act pull_request\n\n# Test with specific event\nact workflow_dispatch\n```\n\n\
+    **Test workflow_run trigger pattern**:\n\n```yaml\n# .github/workflows/deploy.yml\n\
+    name: Deploy Component\n\non:\n  workflow_run:\n    workflows: [\"CI Tests\"]\n\
+    \    types:\n      - completed\n    branches:\n      - main\n\njobs:\n  deploy:\n\
+    \    if: ${{ github.event.workflow_run.conclusion == 'success' }}\n    runs-on:\
+    \ ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n      - name:\
+    \ Deploy to Keboola\n        run: ./deploy.sh\n```\n\n**Best practices for workflow\
+    \ testing**:\n\n- Use `pull_request` trigger for PR validation\n- Use `workflow_run`\
+    \ for sequential workflows (e.g., test → deploy)\n- Use `workflow_dispatch` for\
+    \ manual testing\n- Always check `workflow_run.conclusion` before dependent jobs\n\
+    - Test with branch protection rules enabled\n- Verify secrets are properly scoped\n\
+    \n**Debug workflow issues**:\n\n```yaml\n# Add debug step to workflows\n- name:\
+    \ Debug workflow context\n  run: |\n    echo \"Event: ${{ github.event_name }}\"\
+    \n    echo \"Ref: ${{ github.ref }}\"\n    echo \"SHA: ${{ github.sha }}\"\n \
+    \   echo \"Workflow run conclusion: ${{ github.event.workflow_run.conclusion }}\"\
+    \n```\n\n## Code Quality\n\nUse Ruff for code formatting and linting:\n\n```bash\n\
+    # Format code\nruff format .\n\n# Lint and auto-fix issues\nruff check --fix .\n\
+    ```\n\n## Resources\n\n- [Keboola Developer Docs](https://developers.keboola.com/)\n\
+    - [Python Component Library](https://github.com/keboola/python-component)\n- [Component\
+    \ Tutorial](https://developers.keboola.com/extend/component/tutorial/)\n- [Cookiecutter\
+    \ Template](https://github.com/keboola/cookiecutter-python-component)\n"
   format: markdown
 - source: 05-dataapp-development.md
   content: "# Data App Development\n\n## Overview\n\nKeboola Data Apps are Streamlit\

@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-22T09:57:23.810041
+> Generated: 2025-12-22T14:17:51.318430
 
 ---
 
@@ -292,6 +292,19 @@ Workspaces are temporary database environments (Snowflake, Redshift, or BigQuery
 | **Use Case** | SQL queries, Data Apps | Data management, orchestration |
 | **Persistence** | Temporary (auto-deleted) | Permanent |
 | **Table Names** | `database.schema.table` | `bucket.table` |
+
+**SQL Editor (Snowflake Workspaces)**:
+
+Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: Query, explore, and test SQL directly in Keboola
+- **Supported**: Snowflake workspaces only
+- **Important**: Becoming essential as direct Snowflake access is deprecated for MT/PAYG customers (end of 2025)
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
 
 **When to Use What**:
 
@@ -3121,6 +3134,72 @@ python -m unittest discover -s tests
 pytest tests/ -v --cov=src
 ```
 
+### Testing GitHub Actions Workflows
+
+When developing components with CI/CD pipelines, test your workflows properly:
+
+**Test workflow triggers locally** using [act](https://github.com/nektos/act):
+
+```bash
+# Install act
+brew install act  # macOS
+# or: curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+
+# Test push workflow
+act push
+
+# Test pull_request workflow
+act pull_request
+
+# Test with specific event
+act workflow_dispatch
+```
+
+**Test workflow_run trigger pattern**:
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy Component
+
+on:
+  workflow_run:
+    workflows: ["CI Tests"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy to Keboola
+        run: ./deploy.sh
+```
+
+**Best practices for workflow testing**:
+
+- Use `pull_request` trigger for PR validation
+- Use `workflow_run` for sequential workflows (e.g., test → deploy)
+- Use `workflow_dispatch` for manual testing
+- Always check `workflow_run.conclusion` before dependent jobs
+- Test with branch protection rules enabled
+- Verify secrets are properly scoped
+
+**Debug workflow issues**:
+
+```yaml
+# Add debug step to workflows
+- name: Debug workflow context
+  run: |
+    echo "Event: ${{ github.event_name }}"
+    echo "Ref: ${{ github.ref }}"
+    echo "SHA: ${{ github.sha }}"
+    echo "Workflow run conclusion: ${{ github.event.workflow_run.conclusion }}"
+```
+
 ## Code Quality
 
 Use Ruff for code formatting and linting:
@@ -3744,7 +3823,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-22T09:57:23.810041",
+  "generated_at": "2025-12-22T14:17:51.318430",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

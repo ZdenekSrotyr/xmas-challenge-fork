@@ -474,6 +474,72 @@ python -m unittest discover -s tests
 pytest tests/ -v --cov=src
 ```
 
+### Testing GitHub Actions Workflows
+
+When developing components with CI/CD pipelines, test your workflows properly:
+
+**Test workflow triggers locally** using [act](https://github.com/nektos/act):
+
+```bash
+# Install act
+brew install act  # macOS
+# or: curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+
+# Test push workflow
+act push
+
+# Test pull_request workflow
+act pull_request
+
+# Test with specific event
+act workflow_dispatch
+```
+
+**Test workflow_run trigger pattern**:
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy Component
+
+on:
+  workflow_run:
+    workflows: ["CI Tests"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy to Keboola
+        run: ./deploy.sh
+```
+
+**Best practices for workflow testing**:
+
+- Use `pull_request` trigger for PR validation
+- Use `workflow_run` for sequential workflows (e.g., test → deploy)
+- Use `workflow_dispatch` for manual testing
+- Always check `workflow_run.conclusion` before dependent jobs
+- Test with branch protection rules enabled
+- Verify secrets are properly scoped
+
+**Debug workflow issues**:
+
+```yaml
+# Add debug step to workflows
+- name: Debug workflow context
+  run: |
+    echo "Event: ${{ github.event_name }}"
+    echo "Ref: ${{ github.ref }}"
+    echo "SHA: ${{ github.sha }}"
+    echo "Workflow run conclusion: ${{ github.event.workflow_run.conclusion }}"
+```
+
 ## Code Quality
 
 Use Ruff for code formatting and linting:
