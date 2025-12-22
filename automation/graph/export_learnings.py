@@ -17,6 +17,15 @@ def export_learnings():
     # Check if database exists
     if not DB_PATH.exists():
         print(f"⚠️  Database not found at {DB_PATH}")
+        # If learnings.json already exists with data, preserve it
+        if OUTPUT_PATH.exists():
+            try:
+                existing_data = json.loads(OUTPUT_PATH.read_text(encoding='utf-8'))
+                if existing_data.get('interactions') or existing_data.get('learnings'):
+                    print(f"   Preserving existing learnings.json with {len(existing_data.get('interactions', []))} interactions")
+                    return
+            except (json.JSONDecodeError, KeyError):
+                pass
         print("   Creating empty learnings.json...")
         create_empty_export()
         return
