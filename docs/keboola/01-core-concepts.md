@@ -2,7 +2,7 @@
 
 ## Overview
 
-Keboola is a cloud-based data platform that enables you to extract, transform, and load data from various sources.
+Keboola is a cloud-based data platform that enables you to extract, transform, and load data from various sources. The platform provides a complete suite of tools for building data pipelines, from initial data ingestion to final analytics and reporting.
 
 ## Key Concepts
 

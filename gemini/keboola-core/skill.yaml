@@ -2,20 +2,22 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T13:50:44.385124'
+  generated_at: '2025-12-22T14:07:53.724847'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
 knowledge_base:
 - source: 01-core-concepts.md
   content: "# Core Concepts\n\n## Overview\n\nKeboola is a cloud-based data platform\
-    \ that enables you to extract, transform, and load data from various sources.\n\
-    \n## Key Concepts\n\n### Project\nA project is the top-level container in Keboola.\
-    \ All your configurations, data, and orchestrations belong to a project.\n\n###\
-    \ Storage\nKeboola Storage is where your data lives. It consists of:\n- **Buckets**:\
-    \ Logical containers for tables\n- **Tables**: The actual data\n- **Files**: Temporary\
-    \ file storage\n\n### Components\nComponents are the building blocks:\n- **Extractors**:\
-    \ Pull data from external sources\n- **Transformations**: Process and modify data\n\
+    \ that enables you to extract, transform, and load data from various sources.\
+    \ The platform provides a complete suite of tools for building data pipelines,\
+    \ from initial data ingestion to final analytics and reporting.\n\n## Key Concepts\n\
+    \n### Project\nA project is the top-level container in Keboola. All your configurations,\
+    \ data, and orchestrations belong to a project.\n\n### Storage\nKeboola Storage\
+    \ is where your data lives. It consists of:\n- **Buckets**: Logical containers\
+    \ for tables\n- **Tables**: The actual data\n- **Files**: Temporary file storage\n\
+    \n### Components\nComponents are the building blocks:\n- **Extractors**: Pull\
+    \ data from external sources\n- **Transformations**: Process and modify data\n\
     - **Writers**: Send data to external destinations\n\n## Authentication\n\nUse\
     \ Storage API tokens for authentication:\n\n```python\nimport os\nimport requests\n\
     \nSTORAGE_TOKEN = os.environ[\"KEBOOLA_TOKEN\"]\nSTACK_URL = os.environ.get(\"\
