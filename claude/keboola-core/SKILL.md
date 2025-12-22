@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-22T09:57:23.810041
+> Generated: 2025-12-22T14:07:21.390706
 
 ---
 
@@ -293,6 +293,19 @@ Workspaces are temporary database environments (Snowflake, Redshift, or BigQuery
 | **Persistence** | Temporary (auto-deleted) | Permanent |
 | **Table Names** | `database.schema.table` | `bucket.table` |
 
+**SQL Editor (Snowflake Workspaces)**:
+
+Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: Query, explore, and test SQL directly in Keboola
+- **Supported**: Snowflake workspaces only
+- **Important**: Becoming essential as direct Snowflake access is deprecated for MT/PAYG customers (end of 2025)
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
+
 **When to Use What**:
 
 ```python
@@ -316,6 +329,42 @@ else:
         headers={"X-StorageApi-Token": token}
     )
 ```
+
+**Context Detection Pattern**
+
+```python
+def get_table_reference(bucket, table):
+    """Get correct table reference for current context."""
+    if 'KBC_PROJECT_ID' in os.environ:
+        # Workspace context - return Snowflake-qualified name
+        project_id = os.environ['KBC_PROJECT_ID']
+        return f'"{project_id}"."{bucket}"."{table}"'
+    else:
+        # Storage API context - return API format
+        return f"{bucket}.{table}"
+
+# Usage
+table_ref = get_table_reference('in.c-main', 'customers')
+
+if 'KBC_PROJECT_ID' in os.environ:
+    # Workspace: Use in SQL
+    query = f"SELECT * FROM {table_ref}"
+    df = conn.query(query)
+else:
+    # Storage API: Use in endpoint
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_ref}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+```
+
+**Common Error Messages**:
+
+- `Table 'in.c-main.customers' does not exist` (in workspace) → Use quoted, qualified name
+- `Invalid table ID` (in Storage API) → Remove quotes and project ID
+- `SQL compilation error` (in workspace) → Missing quotes or project ID
+
+<!-- AI Review workflow test: verified 2024 -->
 
 
 ---
@@ -3744,7 +3793,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-22T09:57:23.810041",
+  "generated_at": "2025-12-22T14:07:21.390706",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

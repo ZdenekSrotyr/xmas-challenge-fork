@@ -305,3 +305,39 @@ else:
         headers={"X-StorageApi-Token": token}
     )
 ```
+
+**Context Detection Pattern**
+
+```python
+def get_table_reference(bucket, table):
+    """Get correct table reference for current context."""
+    if 'KBC_PROJECT_ID' in os.environ:
+        # Workspace context - return Snowflake-qualified name
+        project_id = os.environ['KBC_PROJECT_ID']
+        return f'"{project_id}"."{bucket}"."{table}"'
+    else:
+        # Storage API context - return API format
+        return f"{bucket}.{table}"
+
+# Usage
+table_ref = get_table_reference('in.c-main', 'customers')
+
+if 'KBC_PROJECT_ID' in os.environ:
+    # Workspace: Use in SQL
+    query = f"SELECT * FROM {table_ref}"
+    df = conn.query(query)
+else:
+    # Storage API: Use in endpoint
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/{table_ref}/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+```
+
+**Common Error Messages**:
+
+- `Table 'in.c-main.customers' does not exist` (in workspace) → Use quoted, qualified name
+- `Invalid table ID` (in Storage API) → Remove quotes and project ID
+- `SQL compilation error` (in workspace) → Missing quotes or project ID
+
+<!-- AI Review workflow test: verified 2024 -->

@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T13:50:44.385124'
+  generated_at: '2025-12-22T14:07:21.433210'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -123,7 +123,22 @@ knowledge_base:
     \ outside Keboola (local development)\n# - Managing tables/buckets\n# - Orchestrating\
     \ data flows\nelse:\n    import requests\n    response = requests.post(\n    \
     \    f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
-    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n"
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n\n**Context Detection\
+    \ Pattern**\n\n```python\ndef get_table_reference(bucket, table):\n    \"\"\"\
+    Get correct table reference for current context.\"\"\"\n    if 'KBC_PROJECT_ID'\
+    \ in os.environ:\n        # Workspace context - return Snowflake-qualified name\n\
+    \        project_id = os.environ['KBC_PROJECT_ID']\n        return f'\"{project_id}\"\
+    .\"{bucket}\".\"{table}\"'\n    else:\n        # Storage API context - return\
+    \ API format\n        return f\"{bucket}.{table}\"\n\n# Usage\ntable_ref = get_table_reference('in.c-main',\
+    \ 'customers')\n\nif 'KBC_PROJECT_ID' in os.environ:\n    # Workspace: Use in\
+    \ SQL\n    query = f\"SELECT * FROM {table_ref}\"\n    df = conn.query(query)\n\
+    else:\n    # Storage API: Use in endpoint\n    response = requests.post(\n   \
+    \     f\"https://{stack_url}/v2/storage/tables/{table_ref}/export-async\",\n \
+    \       headers={\"X-StorageApi-Token\": token}\n    )\n```\n\n**Common Error\
+    \ Messages**:\n\n- `Table 'in.c-main.customers' does not exist` (in workspace)\
+    \ → Use quoted, qualified name\n- `Invalid table ID` (in Storage API) → Remove\
+    \ quotes and project ID\n- `SQL compilation error` (in workspace) → Missing quotes\
+    \ or project ID\n\n<!-- AI Review workflow test: verified 2024 -->\n"
   format: markdown
 - source: 02-storage-api.md
   content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\
