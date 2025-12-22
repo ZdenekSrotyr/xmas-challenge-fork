@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T07:13:18.278993'
+  generated_at: '2025-12-22T13:50:44.385124'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -107,14 +107,22 @@ knowledge_base:
     \ Database connection (SQL) | REST API (HTTP) |\n| **Use Case** | SQL queries,\
     \ Data Apps | Data management, orchestration |\n| **Persistence** | Temporary\
     \ (auto-deleted) | Permanent |\n| **Table Names** | `database.schema.table` |\
-    \ `bucket.table` |\n\n**When to Use What**:\n\n```python\n# Use WORKSPACE when:\n\
-    # - Running inside Data App (production)\n# - Running transformation\n# - Direct\
-    \ SQL queries needed\nif 'KBC_PROJECT_ID' in os.environ:\n    conn = st.connection('snowflake',\
-    \ type='snowflake')\n    query = f'SELECT * FROM \"{os.environ[\"KBC_PROJECT_ID\"\
-    ]}\".\"in.c-main\".\"customers\"'\n    df = conn.query(query)\n\n# Use STORAGE\
-    \ API when:\n# - Running outside Keboola (local development)\n# - Managing tables/buckets\n\
-    # - Orchestrating data flows\nelse:\n    import requests\n    response = requests.post(\n\
-    \        f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
+    \ `bucket.table` |\n\n**SQL Editor (Snowflake Workspaces)**:\n\nKeboola has a\
+    \ built-in SQL Editor for Snowflake workspaces (currently in public beta):\n\n\
+    - **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor\
+    \ tab\n- **Features**: Query, explore, and test SQL directly in Keboola\n- **Supported**:\
+    \ Snowflake workspaces only\n- **Important**: Becoming essential as direct Snowflake\
+    \ access is deprecated for MT/PAYG customers (end of 2025)\n\nReferences:\n- [SQL\
+    \ Editor Documentation](https://help.keboola.com/workspace/sql-editor/)\n- [SQL\
+    \ Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)\n\
+    \n**When to Use What**:\n\n```python\n# Use WORKSPACE when:\n# - Running inside\
+    \ Data App (production)\n# - Running transformation\n# - Direct SQL queries needed\n\
+    if 'KBC_PROJECT_ID' in os.environ:\n    conn = st.connection('snowflake', type='snowflake')\n\
+    \    query = f'SELECT * FROM \"{os.environ[\"KBC_PROJECT_ID\"]}\".\"in.c-main\"\
+    .\"customers\"'\n    df = conn.query(query)\n\n# Use STORAGE API when:\n# - Running\
+    \ outside Keboola (local development)\n# - Managing tables/buckets\n# - Orchestrating\
+    \ data flows\nelse:\n    import requests\n    response = requests.post(\n    \
+    \    f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
     ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n"
   format: markdown
 - source: 02-storage-api.md
