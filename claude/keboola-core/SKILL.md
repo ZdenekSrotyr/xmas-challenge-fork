@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-22T09:57:23.810041
+> Generated: 2025-12-22T14:18:35.083745
 
 ---
 
@@ -292,6 +292,19 @@ Workspaces are temporary database environments (Snowflake, Redshift, or BigQuery
 | **Use Case** | SQL queries, Data Apps | Data management, orchestration |
 | **Persistence** | Temporary (auto-deleted) | Permanent |
 | **Table Names** | `database.schema.table` | `bucket.table` |
+
+**SQL Editor (Snowflake Workspaces)**:
+
+Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: Query, explore, and test SQL directly in Keboola
+- **Supported**: Snowflake workspaces only
+- **Important**: Becoming essential as direct Snowflake access is deprecated for MT/PAYG customers (end of 2025)
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
 
 **When to Use What**:
 
@@ -3121,6 +3134,71 @@ python -m unittest discover -s tests
 pytest tests/ -v --cov=src
 ```
 
+### Testing Workflows
+
+When developing components with CI/CD pipelines, test your GitHub Actions workflows:
+
+**Local workflow testing** (using act):
+```bash
+# Install act (GitHub Actions local runner)
+brew install act  # macOS
+# or
+curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash  # Linux
+
+# Test workflow locally
+act push --workflows .github/workflows/push.yml
+
+# Test with specific event
+act pull_request --workflows .github/workflows/test.yml
+```
+
+**Testing workflow triggers**:
+```yaml
+# .github/workflows/test.yml
+name: Test Component
+
+on:
+  # Trigger on PR for code review
+  pull_request:
+    branches: [main]
+  
+  # Trigger on push to test branches
+  push:
+    branches: [test/**]
+  
+  # Manual trigger for debugging
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run tests
+        run: pytest tests/ -v
+```
+
+**Debugging workflow runs**:
+```yaml
+# Add debug output to workflows
+- name: Debug environment
+  run: |
+    echo "Event: ${{ github.event_name }}"
+    echo "Ref: ${{ github.ref }}"
+    echo "SHA: ${{ github.sha }}"
+    env
+
+# Enable debug logging
+# Set repository secret: ACTIONS_STEP_DEBUG = true
+```
+
+**Best practices**:
+- Test workflows on feature branches before merging
+- Use `workflow_dispatch` for manual testing
+- Add status badges to README for visibility
+- Monitor workflow run times and optimize if needed
+- Use workflow artifacts for debugging failed runs
+
 ## Code Quality
 
 Use Ruff for code formatting and linting:
@@ -3744,7 +3822,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-22T09:57:23.810041",
+  "generated_at": "2025-12-22T14:18:35.083745",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

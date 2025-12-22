@@ -474,6 +474,71 @@ python -m unittest discover -s tests
 pytest tests/ -v --cov=src
 ```
 
+### Testing Workflows
+
+When developing components with CI/CD pipelines, test your GitHub Actions workflows:
+
+**Local workflow testing** (using act):
+```bash
+# Install act (GitHub Actions local runner)
+brew install act  # macOS
+# or
+curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash  # Linux
+
+# Test workflow locally
+act push --workflows .github/workflows/push.yml
+
+# Test with specific event
+act pull_request --workflows .github/workflows/test.yml
+```
+
+**Testing workflow triggers**:
+```yaml
+# .github/workflows/test.yml
+name: Test Component
+
+on:
+  # Trigger on PR for code review
+  pull_request:
+    branches: [main]
+  
+  # Trigger on push to test branches
+  push:
+    branches: [test/**]
+  
+  # Manual trigger for debugging
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run tests
+        run: pytest tests/ -v
+```
+
+**Debugging workflow runs**:
+```yaml
+# Add debug output to workflows
+- name: Debug environment
+  run: |
+    echo "Event: ${{ github.event_name }}"
+    echo "Ref: ${{ github.ref }}"
+    echo "SHA: ${{ github.sha }}"
+    env
+
+# Enable debug logging
+# Set repository secret: ACTIONS_STEP_DEBUG = true
+```
+
+**Best practices**:
+- Test workflows on feature branches before merging
+- Use `workflow_dispatch` for manual testing
+- Add status badges to README for visibility
+- Monitor workflow run times and optimize if needed
+- Use workflow artifacts for debugging failed runs
+
 ## Code Quality
 
 Use Ruff for code formatting and linting:
