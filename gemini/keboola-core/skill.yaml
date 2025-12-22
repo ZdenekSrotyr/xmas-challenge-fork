@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-21T21:03:36.375763'
+  generated_at: '2025-12-22T07:11:25.017753'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -1362,22 +1362,23 @@ knowledge_base:
     ```python\nif 'my_value' not in st.session_state:\n    st.session_state.my_value\
     \ = default_value\n\nwidget = st.text_input(\"Label\", value=st.session_state.my_value)\n\
     ```\n\n## Resources\n\n- [Streamlit Documentation](https://docs.streamlit.io)\n\
-    - [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)\n\
+    - [Keboola Data Apps Guide](https://help.keboola.com/components/data-apps/)\n\
     - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)\n\
-    \ndef get_table_name():\n    \"\"\"Get fully qualified table name for current\
-    \ context.\n    \n    Returns:\n        Workspace context: '\"PROJECT_ID\".\"\
-    BUCKET_ID\".\"TABLE_NAME\"' (quoted, SQL-safe)\n        Storage API context: 'BUCKET_ID.TABLE_NAME'\
-    \ (for API endpoints)\n    \n    Context difference:\n    - Workspace uses PROJECT_ID\
-    \ as database name (Snowflake schema)\n    - Storage API uses bucket.table format\
-    \ (no project ID)\n    \"\"\"\n    mode = get_connection_mode()\n\n    if mode\
-    \ == 'workspace':\n        # WORKSPACE CONTEXT: Running in Keboola (has workspace\
-    \ access)\n        # Use PROJECT_ID as database qualifier for Snowflake queries\n\
-    \        project_id = os.environ['KBC_PROJECT_ID']  # e.g., \"6789\"\n       \
-    \ bucket = os.environ.get('KBC_BUCKET_ID', 'in.c-analysis')  # e.g., \"in.c-main\"\
-    \n        table = os.environ.get('KBC_TABLE_NAME', 'usage_data')  # e.g., \"customers\"\
-    \n        \n        # Return: \"6789\".\"in.c-main\".\"customers\"\n        return\
-    \ f'\"{project_id}\".\"{bucket}\".\"{table}\"'\n    else:\n        # STORAGE API\
-    \ CONTEXT: Running locally (no workspace)\n        # Use bucket.table format for\
-    \ Storage API endpoints\n        bucket = 'in.c-analysis'\n        table = 'usage_data'\n\
-    \        \n        # Return: in.c-analysis.usage_data\n        return f'{bucket}.{table}'\n"
+    \n## Table Name Helper\n\n```python\ndef get_table_name():\n    \"\"\"Get fully\
+    \ qualified table name for current context.\n    \n    Returns:\n        Workspace\
+    \ context: '\"PROJECT_ID\".\"BUCKET_ID\".\"TABLE_NAME\"' (quoted, SQL-safe)\n\
+    \        Storage API context: 'BUCKET_ID.TABLE_NAME' (for API endpoints)\n   \
+    \ \n    Context difference:\n    - Workspace uses PROJECT_ID as database name\
+    \ (Snowflake schema)\n    - Storage API uses bucket.table format (no project ID)\n\
+    \    \"\"\"\n    mode = get_connection_mode()\n\n    if mode == 'workspace':\n\
+    \        # WORKSPACE CONTEXT: Running in Keboola (has workspace access)\n    \
+    \    # Use PROJECT_ID as database qualifier for Snowflake queries\n        project_id\
+    \ = os.environ['KBC_PROJECT_ID']  # e.g., \"6789\"\n        bucket = os.environ.get('KBC_BUCKET_ID',\
+    \ 'in.c-analysis')  # e.g., \"in.c-main\"\n        table = os.environ.get('KBC_TABLE_NAME',\
+    \ 'usage_data')  # e.g., \"customers\"\n        \n        # Return: \"6789\".\"\
+    in.c-main\".\"customers\"\n        return f'\"{project_id}\".\"{bucket}\".\"{table}\"\
+    '\n    else:\n        # STORAGE API CONTEXT: Running locally (no workspace)\n\
+    \        # Use bucket.table format for Storage API endpoints\n        bucket =\
+    \ 'in.c-analysis'\n        table = 'usage_data'\n        \n        # Return: in.c-analysis.usage_data\n\
+    \        return f'{bucket}.{table}'\n```\n"
   format: markdown
