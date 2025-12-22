@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-22T09:57:23.810041
+> Generated: 2025-12-22T14:01:05.998773
 
 ---
 
@@ -293,6 +293,19 @@ Workspaces are temporary database environments (Snowflake, Redshift, or BigQuery
 | **Persistence** | Temporary (auto-deleted) | Permanent |
 | **Table Names** | `database.schema.table` | `bucket.table` |
 
+**SQL Editor (Snowflake Workspaces)**:
+
+Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: Query, explore, and test SQL directly in Keboola
+- **Supported**: Snowflake workspaces only
+- **Important**: Becoming essential as direct Snowflake access is deprecated for MT/PAYG customers (end of 2025)
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
+
 **When to Use What**:
 
 ```python
@@ -316,6 +329,31 @@ else:
         headers={"X-StorageApi-Token": token}
     )
 ```
+
+**Workspace vs Storage**:
+
+| Aspect | Workspace | Storage |
+|--------|-----------|--------|
+| **Technology** | Snowflake/Redshift/BigQuery | Keboola Storage API |
+| **Access Method** | Database connection (SQL) | REST API (HTTP) |
+| **Use Case** | SQL queries, Data Apps | Data management, orchestration |
+| **Persistence** | Temporary (auto-deleted) | Permanent |
+| **Table Names** | `database.schema.table` | `bucket.table` |
+
+**SQL Editor (Snowflake Workspaces)**:
+
+Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: Query, explore, and test SQL directly in Keboola
+- **Supported**: Snowflake workspaces only
+- **Important**: Becoming essential as direct Snowflake access is deprecated for MT/PAYG customers (end of 2025)
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
+
+**When to Use What**:
 
 
 ---
@@ -3171,6 +3209,20 @@ Why?
 - Loading data into Streamlit doesn't scale
 - SQL aggregation is 10-100x faster than pandas
 
+**SQL Editor for Development**:
+
+For Snowflake workspaces, you can use Keboola's built-in SQL Editor to test queries before implementing them in your Data App:
+
+1. Go to **Workspaces** → Create or open **Snowflake SQL Workspace**
+2. Click the **SQL Editor** tab
+3. Test and refine your SQL queries interactively
+4. Copy working queries into your Data App code
+
+Note: The SQL Editor is currently in public beta and supports Snowflake workspaces only.
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+
 ## Project Structure
 
 ```
@@ -3744,7 +3796,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-22T09:57:23.810041",
+  "generated_at": "2025-12-22T14:01:05.998773",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }

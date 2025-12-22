@@ -2,7 +2,7 @@ name: keboola-core
 version: 1.0.0
 description: Keboola platform knowledge for Gemini
 metadata:
-  generated_at: '2025-12-22T13:50:44.385124'
+  generated_at: '2025-12-22T14:01:06.041192'
   source_path: docs/keboola
   generator: gemini_generator.py v1.0
   poc_notice: This is a POC. Not production-ready.
@@ -123,7 +123,21 @@ knowledge_base:
     \ outside Keboola (local development)\n# - Managing tables/buckets\n# - Orchestrating\
     \ data flows\nelse:\n    import requests\n    response = requests.post(\n    \
     \    f\"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async\"\
-    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n"
+    ,\n        headers={\"X-StorageApi-Token\": token}\n    )\n```\n\n**Workspace\
+    \ vs Storage**:\n\n| Aspect | Workspace | Storage |\n|--------|-----------|--------|\n\
+    | **Technology** | Snowflake/Redshift/BigQuery | Keboola Storage API |\n| **Access\
+    \ Method** | Database connection (SQL) | REST API (HTTP) |\n| **Use Case** | SQL\
+    \ queries, Data Apps | Data management, orchestration |\n| **Persistence** | Temporary\
+    \ (auto-deleted) | Permanent |\n| **Table Names** | `database.schema.table` |\
+    \ `bucket.table` |\n\n**SQL Editor (Snowflake Workspaces)**:\n\nKeboola has a\
+    \ built-in SQL Editor for Snowflake workspaces (currently in public beta):\n\n\
+    - **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor\
+    \ tab\n- **Features**: Query, explore, and test SQL directly in Keboola\n- **Supported**:\
+    \ Snowflake workspaces only\n- **Important**: Becoming essential as direct Snowflake\
+    \ access is deprecated for MT/PAYG customers (end of 2025)\n\nReferences:\n- [SQL\
+    \ Editor Documentation](https://help.keboola.com/workspace/sql-editor/)\n- [SQL\
+    \ Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)\n\
+    \n**When to Use What**:\n"
   format: markdown
 - source: 02-storage-api.md
   content: "# Storage API\n\n## Reading Tables\n\n### List All Tables\n\n```python\n\
@@ -1191,30 +1205,37 @@ knowledge_base:
     \n**Core Principle**: Push computation to the database, never load large datasets\
     \ into Python.\n\nWhy?\n- Keboola workspaces (Snowflake, Redshift, BigQuery) are\
     \ optimized for queries\n- Loading data into Streamlit doesn't scale\n- SQL aggregation\
-    \ is 10-100x faster than pandas\n\n## Project Structure\n\n```\nmy-dataapp/\n\
-    ├── streamlit_app.py          # Main app entry point with sidebar\n├── pages/\n\
-    │   ├── 01_Overview.py        # First page\n│   ├── 02_Analytics.py       # Second\
-    \ page\n│   └── 03_Details.py         # Third page\n├── utils/\n│   ├── data_loader.py\
-    \        # Centralized data access\n│   └── config.py             # Environment\
-    \ configuration\n├── requirements.txt          # Python dependencies\n└── README.md\
-    \                 # Documentation\n```\n\n## Environment Setup\n\n### Local Development\n\
-    \nData apps must work in two environments with **different contexts**:\n\n1. **Local\
-    \ Development (Storage API / Project Context)**: \n   - Uses Storage API token\
-    \ for authentication\n   - References tables as `in.c-bucket.table`\n   - Exports\
-    \ data via REST API\n   - No workspace ID involved\n\n2. **Production (Workspace\
-    \ Context)**: \n   - Uses workspace database connection\n   - References tables\
-    \ as `\"PROJECT_ID\".\"in.c-bucket\".\"table\"`\n   - Queries data via SQL\n \
-    \  - Requires workspace environment variables\n\n**Why Two Contexts?**\n\nIn production,\
-    \ Data Apps run inside a **Keboola workspace** (Snowflake/Redshift instance) where\
-    \ your project data is mirrored. This provides:\n- Direct SQL access (fast queries)\n\
-    - No API rate limits\n- Native database features\n\nDuring local development,\
-    \ you don't have workspace access, so you use the **Storage API** (REST) to export\
-    \ data.\n\n**Environment Variables by Context**:\n\n```bash\n# WORKSPACE CONTEXT\
-    \ (Production)\n# Automatically set by Keboola platform:\nKBC_PROJECT_ID=6789\
-    \           # Your project ID (used in table references)\nKBC_BUCKET_ID=in.c-main\
-    \       # Default bucket for app\nKBC_TABLE_NAME=customers      # Default table\
-    \ for app\n\n# STORAGE API CONTEXT (Local)\n# You must set manually:\nKEBOOLA_TOKEN=your-token\
-    \                        # Storage API token\nKEBOOLA_STACK_URL=connection.keboola.com\
+    \ is 10-100x faster than pandas\n\n**SQL Editor for Development**:\n\nFor Snowflake\
+    \ workspaces, you can use Keboola's built-in SQL Editor to test queries before\
+    \ implementing them in your Data App:\n\n1. Go to **Workspaces** → Create or open\
+    \ **Snowflake SQL Workspace**\n2. Click the **SQL Editor** tab\n3. Test and refine\
+    \ your SQL queries interactively\n4. Copy working queries into your Data App code\n\
+    \nNote: The SQL Editor is currently in public beta and supports Snowflake workspaces\
+    \ only.\n\nReferences:\n- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)\n\
+    \n## Project Structure\n\n```\nmy-dataapp/\n├── streamlit_app.py          # Main\
+    \ app entry point with sidebar\n├── pages/\n│   ├── 01_Overview.py        # First\
+    \ page\n│   ├── 02_Analytics.py       # Second page\n│   └── 03_Details.py   \
+    \      # Third page\n├── utils/\n│   ├── data_loader.py        # Centralized data\
+    \ access\n│   └── config.py             # Environment configuration\n├── requirements.txt\
+    \          # Python dependencies\n└── README.md                 # Documentation\n\
+    ```\n\n## Environment Setup\n\n### Local Development\n\nData apps must work in\
+    \ two environments with **different contexts**:\n\n1. **Local Development (Storage\
+    \ API / Project Context)**: \n   - Uses Storage API token for authentication\n\
+    \   - References tables as `in.c-bucket.table`\n   - Exports data via REST API\n\
+    \   - No workspace ID involved\n\n2. **Production (Workspace Context)**: \n  \
+    \ - Uses workspace database connection\n   - References tables as `\"PROJECT_ID\"\
+    .\"in.c-bucket\".\"table\"`\n   - Queries data via SQL\n   - Requires workspace\
+    \ environment variables\n\n**Why Two Contexts?**\n\nIn production, Data Apps run\
+    \ inside a **Keboola workspace** (Snowflake/Redshift instance) where your project\
+    \ data is mirrored. This provides:\n- Direct SQL access (fast queries)\n- No API\
+    \ rate limits\n- Native database features\n\nDuring local development, you don't\
+    \ have workspace access, so you use the **Storage API** (REST) to export data.\n\
+    \n**Environment Variables by Context**:\n\n```bash\n# WORKSPACE CONTEXT (Production)\n\
+    # Automatically set by Keboola platform:\nKBC_PROJECT_ID=6789           # Your\
+    \ project ID (used in table references)\nKBC_BUCKET_ID=in.c-main       # Default\
+    \ bucket for app\nKBC_TABLE_NAME=customers      # Default table for app\n\n# STORAGE\
+    \ API CONTEXT (Local)\n# You must set manually:\nKEBOOLA_TOKEN=your-token    \
+    \                    # Storage API token\nKEBOOLA_STACK_URL=connection.keboola.com\
     \       # Your stack URL\n```\n\n```python\n# utils/config.py\nimport os\nimport\
     \ streamlit as st\n\ndef get_connection_mode():\n    \"\"\"Detect if running locally\
     \ or in Keboola.\"\"\"\n    return 'workspace' if 'KBC_PROJECT_ID' in os.environ\

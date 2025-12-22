@@ -24,6 +24,20 @@ Why?
 - Loading data into Streamlit doesn't scale
 - SQL aggregation is 10-100x faster than pandas
 
+**SQL Editor for Development**:
+
+For Snowflake workspaces, you can use Keboola's built-in SQL Editor to test queries before implementing them in your Data App:
+
+1. Go to **Workspaces** → Create or open **Snowflake SQL Workspace**
+2. Click the **SQL Editor** tab
+3. Test and refine your SQL queries interactively
+4. Copy working queries into your Data App code
+
+Note: The SQL Editor is currently in public beta and supports Snowflake workspaces only.
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+
 ## Project Structure
 
 ```

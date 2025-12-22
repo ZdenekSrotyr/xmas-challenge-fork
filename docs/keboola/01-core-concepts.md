@@ -305,3 +305,28 @@ else:
         headers={"X-StorageApi-Token": token}
     )
 ```
+
+**Workspace vs Storage**:
+
+| Aspect | Workspace | Storage |
+|--------|-----------|--------|
+| **Technology** | Snowflake/Redshift/BigQuery | Keboola Storage API |
+| **Access Method** | Database connection (SQL) | REST API (HTTP) |
+| **Use Case** | SQL queries, Data Apps | Data management, orchestration |
+| **Persistence** | Temporary (auto-deleted) | Permanent |
+| **Table Names** | `database.schema.table` | `bucket.table` |
+
+**SQL Editor (Snowflake Workspaces)**:
+
+Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: Query, explore, and test SQL directly in Keboola
+- **Supported**: Snowflake workspaces only
+- **Important**: Becoming essential as direct Snowflake access is deprecated for MT/PAYG customers (end of 2025)
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Announcement](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
+
+**When to Use What**:
