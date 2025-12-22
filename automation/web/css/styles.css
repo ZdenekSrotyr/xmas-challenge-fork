@@ -204,6 +204,162 @@ body {
 .doc-viewer {
     flex: 1;
     overflow-y: auto;
+    padding: 0;
+}
+
+/* Document toolbar with view toggle */
+.doc-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.view-btn {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.view-btn:hover {
+    background: #f0f0f0;
+}
+
+.view-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+.doc-title {
+    font-weight: 600;
+    color: #555;
+}
+
+/* Blame view styles */
+.blame-view {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+
+.blame-line {
+    display: flex;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    min-height: 1.5em;
+}
+
+.blame-line:hover {
+    filter: brightness(0.95);
+}
+
+.blame-info {
+    width: 140px;
+    min-width: 140px;
+    padding: 0 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    border-right: 1px solid #ddd;
+    background: rgba(255,255,255,0.5);
+}
+
+.blame-info-hidden .blame-commit,
+.blame-info-hidden .blame-author {
+    visibility: hidden;
+}
+
+.blame-commit {
+    font-size: 0.75rem;
+    color: #667eea;
+    font-weight: 600;
+}
+
+.blame-author {
+    font-size: 0.7rem;
+    color: #888;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70px;
+}
+
+.blame-line-num {
+    width: 40px;
+    min-width: 40px;
+    text-align: right;
+    padding-right: 0.75rem;
+    color: #999;
+    user-select: none;
+    border-right: 1px solid #eee;
+}
+
+.blame-content {
+    flex: 1;
+    padding-left: 1rem;
+    white-space: pre;
+    overflow-x: auto;
+}
+
+/* Blame legend */
+.blame-legend {
+    padding: 1rem 1.5rem;
+    background: #f8f9fa;
+    border-top: 1px solid #e0e0e0;
+}
+
+.blame-legend h4 {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 0.75rem;
+}
+
+.blame-legend-item {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    margin-bottom: 0.25rem;
+    background: white;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.blame-legend-hash {
+    font-family: monospace;
+    color: #667eea;
+    font-weight: 600;
+}
+
+.blame-legend-author {
+    color: #333;
+    min-width: 100px;
+}
+
+.blame-legend-msg {
+    color: #666;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Content view padding */
+.doc-content {
     padding: 2rem 3rem;
 }
 

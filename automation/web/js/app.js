@@ -127,17 +127,47 @@ function selectDocument(index) {
     renderHistory(doc.history);
 }
 
+// Track current view mode
+let currentViewMode = 'content'; // 'content' or 'blame'
+
 // Render document content with markdown
 function renderDocContent(doc) {
     const docViewer = document.getElementById('doc-viewer');
-
-    // Create content container
     docViewer.innerHTML = '';
 
+    // Create toolbar with view toggle
+    const toolbar = document.createElement('div');
+    toolbar.className = 'doc-toolbar';
+    toolbar.innerHTML = `
+        <div class="view-toggle">
+            <button class="view-btn ${currentViewMode === 'content' ? 'active' : ''}" data-view="content">📄 Content</button>
+            <button class="view-btn ${currentViewMode === 'blame' ? 'active' : ''}" data-view="blame">👤 Blame</button>
+        </div>
+        <div class="doc-title">${escapeHtml(doc.name)}</div>
+    `;
+
+    // Add click handlers for view toggle
+    toolbar.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentViewMode = btn.dataset.view;
+            renderDocContent(doc);
+        });
+    });
+
+    docViewer.appendChild(toolbar);
+
+    if (currentViewMode === 'content') {
+        renderContentView(doc, docViewer);
+    } else {
+        renderBlameView(doc, docViewer);
+    }
+}
+
+// Render normal markdown content view
+function renderContentView(doc, container) {
     const docContent = document.createElement('div');
     docContent.className = 'doc-content';
 
-    // Parse markdown and render as HTML
     try {
         const html = marked.parse(doc.content);
         docContent.innerHTML = html;
@@ -146,7 +176,85 @@ function renderDocContent(doc) {
         docContent.innerHTML = `<pre>${escapeHtml(doc.content)}</pre>`;
     }
 
-    docViewer.appendChild(docContent);
+    container.appendChild(docContent);
+}
+
+// Render blame view with line-by-line attribution
+function renderBlameView(doc, container) {
+    const blameContainer = document.createElement('div');
+    blameContainer.className = 'blame-view';
+
+    if (!doc.blame || !doc.blame.lines || doc.blame.lines.length === 0) {
+        blameContainer.innerHTML = '<div class="empty-state"><p>Blame data not available</p></div>';
+        container.appendChild(blameContainer);
+        return;
+    }
+
+    // Create color map for commits
+    const commitColors = {};
+    const colors = ['#e3f2fd', '#f3e5f5', '#e8f5e9', '#fff3e0', '#fce4ec', '#e0f2f1', '#f5f5f5', '#ede7f6'];
+    let colorIndex = 0;
+
+    doc.blame.lines.forEach(line => {
+        if (line.commit && !commitColors[line.commit]) {
+            commitColors[line.commit] = colors[colorIndex % colors.length];
+            colorIndex++;
+        }
+    });
+
+    // Group consecutive lines by commit for cleaner display
+    let currentCommit = null;
+    let lineNumber = 1;
+
+    doc.blame.lines.forEach((line, index) => {
+        const lineDiv = document.createElement('div');
+        lineDiv.className = 'blame-line';
+        lineDiv.style.backgroundColor = commitColors[line.commit] || '#f5f5f5';
+
+        // Show commit info only when it changes
+        const showCommitInfo = line.commit !== currentCommit;
+        currentCommit = line.commit;
+
+        lineDiv.innerHTML = `
+            <span class="blame-info ${showCommitInfo ? '' : 'blame-info-hidden'}">
+                <span class="blame-commit" title="${escapeHtml(line.author)}">${line.commit || '???????'}</span>
+                <span class="blame-author">${showCommitInfo ? truncateAuthor(line.author) : ''}</span>
+            </span>
+            <span class="blame-line-num">${lineNumber}</span>
+            <span class="blame-content">${escapeHtml(line.content)}</span>
+        `;
+
+        blameContainer.appendChild(lineDiv);
+        lineNumber++;
+    });
+
+    container.appendChild(blameContainer);
+
+    // Add blame legend
+    if (doc.blame.commits && doc.blame.commits.length > 0) {
+        const legend = document.createElement('div');
+        legend.className = 'blame-legend';
+        legend.innerHTML = `
+            <h4>Recent Contributors</h4>
+            ${doc.blame.commits.slice(0, 5).map(c => `
+                <div class="blame-legend-item" style="border-left: 4px solid ${commitColors[c.short_hash] || '#ccc'}">
+                    <span class="blame-legend-hash">${c.short_hash}</span>
+                    <span class="blame-legend-author">${escapeHtml(c.author)}</span>
+                    <span class="blame-legend-msg">${escapeHtml(truncate(c.message, 40))}</span>
+                </div>
+            `).join('')}
+        `;
+        container.appendChild(legend);
+    }
+}
+
+// Helper to truncate author name
+function truncateAuthor(author) {
+    if (!author) return '';
+    // Get first name or first 10 chars
+    const parts = author.split(' ');
+    if (parts[0].length <= 10) return parts[0];
+    return author.substring(0, 10);
 }
 
 // Render document history in the right panel

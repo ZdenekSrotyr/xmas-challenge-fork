@@ -151,6 +151,90 @@ class GitHistoryExtractor:
         except subprocess.CalledProcessError:
             return False
 
+    def get_file_blame(self, file_path: Path) -> Dict:
+        """
+        Get git blame information for a file - which commit last modified each line.
+
+        Args:
+            file_path: Path to the file (relative to repo root)
+
+        Returns:
+            List of blame entries with line info and commit metadata
+        """
+        try:
+            # Use git blame with porcelain format for parsing
+            cmd = [
+                'git',
+                'blame',
+                '--line-porcelain',
+                str(file_path)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            blame_data = []
+            current_commit = {}
+            seen_commits = {}
+
+            for line in result.stdout.split('\n'):
+                if not line:
+                    continue
+
+                # First line of each block: hash original_line final_line [num_lines]
+                if len(line) == 40 or (len(line) > 40 and line[40] == ' ' and line[0:40].isalnum()):
+                    parts = line.split()
+                    commit_hash = parts[0]
+                    if len(commit_hash) == 40:
+                        current_commit = {'hash': commit_hash, 'short_hash': commit_hash[:7]}
+                elif line.startswith('author '):
+                    current_commit['author'] = line[7:]
+                elif line.startswith('author-time '):
+                    current_commit['timestamp'] = int(line[12:])
+                elif line.startswith('summary '):
+                    current_commit['message'] = line[8:]
+                elif line.startswith('\t'):
+                    # This is the actual content line
+                    line_content = line[1:]  # Remove leading tab
+
+                    # Store unique commit info
+                    commit_hash = current_commit.get('hash', '')
+                    if commit_hash and commit_hash not in seen_commits:
+                        seen_commits[commit_hash] = {
+                            'hash': commit_hash,
+                            'short_hash': current_commit.get('short_hash', ''),
+                            'author': current_commit.get('author', ''),
+                            'timestamp': current_commit.get('timestamp', 0),
+                            'message': current_commit.get('message', '')
+                        }
+
+                    blame_data.append({
+                        'commit': current_commit.get('short_hash', ''),
+                        'author': current_commit.get('author', ''),
+                        'content': line_content
+                    })
+
+            # Create summary of commits that touched this file
+            blame_summary = sorted(
+                seen_commits.values(),
+                key=lambda x: x.get('timestamp', 0),
+                reverse=True
+            )
+
+            return {
+                'lines': blame_data,
+                'commits': blame_summary[:10]  # Top 10 most recent commits
+            }
+
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Failed to get blame for {file_path}: {e}", file=sys.stderr)
+            return {'lines': [], 'commits': []}
+
 
 class DocsExporter:
     """Export documentation files with git history to JSON."""
@@ -226,6 +310,7 @@ class DocsExporter:
 
             content = self.read_file_content(file_path)
             history = self.git_extractor.get_file_history(file_path)
+            blame = self.git_extractor.get_file_blame(file_path)
 
             # Get relative path from docs directory for cleaner display
             try:
@@ -239,6 +324,7 @@ class DocsExporter:
                 'name': file_path.name,
                 'content': content,
                 'history': history,
+                'blame': blame,
                 'commit_count': len(history),
                 'last_modified': history[0]['date'] if history else None,
                 'last_author': history[0]['author'] if history else None
