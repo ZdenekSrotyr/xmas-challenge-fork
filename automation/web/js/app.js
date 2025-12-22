@@ -47,7 +47,8 @@ async function initApp() {
 // Load documentation data from JSON
 async function loadDocs() {
     try {
-        const response = await fetch('data/docs.json');
+        // Add cache-busting to ensure fresh data
+        const response = await fetch('data/docs.json?v=' + Date.now());
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -350,8 +351,8 @@ function setupTabs() {
 
 async function initLearningDashboard() {
     try {
-        // Load learnings data
-        const response = await fetch('data/learnings.json');
+        // Load learnings data with cache-busting
+        const response = await fetch('data/learnings.json?v=' + Date.now());
         learningsData = await response.json();
 
         // Render components
