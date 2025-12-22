@@ -244,8 +244,20 @@ function renderRecentChanges(recentChanges) {
         meta.className = 'recent-item-meta';
         meta.textContent = `${change.author} - ${formatDate(change.date)}`;
 
-        recentItem.appendChild(message);
-        recentItem.appendChild(meta);
+        // Add change stats if available
+        if (change.stats && (change.stats.insertions > 0 || change.stats.deletions > 0)) {
+            const stats = document.createElement('div');
+            stats.className = 'recent-item-stats';
+            const additions = change.stats.insertions > 0 ? `<span class="stat-add">+${change.stats.insertions}</span>` : '';
+            const deletions = change.stats.deletions > 0 ? `<span class="stat-del">-${change.stats.deletions}</span>` : '';
+            stats.innerHTML = `${additions} ${deletions}`.trim();
+            recentItem.appendChild(message);
+            recentItem.appendChild(stats);
+            recentItem.appendChild(meta);
+        } else {
+            recentItem.appendChild(message);
+            recentItem.appendChild(meta);
+        }
 
         recentChangesList.appendChild(recentItem);
     });
@@ -421,7 +433,13 @@ function renderLearnings(learnings) {
         return;
     }
 
-    container.innerHTML = filtered.map(learning => `
+    container.innerHTML = filtered.map(learning => {
+        // Find corresponding interaction for more details
+        const interaction = learning.interaction_id
+            ? learningsData.interactions.find(i => i.id === learning.interaction_id)
+            : null;
+
+        return `
         <div class="learning-item">
             <div class="learning-header">
                 <div class="learning-concept">${escapeHtml(learning.concept)}</div>
@@ -434,20 +452,32 @@ function renderLearnings(learnings) {
             <div class="learning-meta">
                 <span>📅 ${formatLearningDate(learning.created_at)}</span>
                 ${learning.interaction_id ? `<span>🔗 Interaction #${learning.interaction_id}</span>` : ''}
-            </div>
-
-            <div class="learning-proposed-fix">
-                <strong>Proposed Fix:</strong><br>
-                ${escapeHtml(learning.proposed_fix)}
+                ${interaction && interaction.user_feedback ? `<span>⭐ ${extractRating(interaction.user_feedback) || 'N/A'}/5</span>` : ''}
             </div>
 
             ${learning.user_context ? `
-                <div class="learning-context">
-                    Context: ${escapeHtml(learning.user_context)}
+                <div class="learning-detail">
+                    <strong>❓ Question:</strong> ${escapeHtml(learning.user_context)}
                 </div>
             ` : ''}
+
+            ${interaction && interaction.agent_response ? `
+                <div class="learning-detail">
+                    <strong>🤖 Response:</strong> ${escapeHtml(interaction.agent_response)}
+                </div>
+            ` : ''}
+
+            ${interaction && interaction.user_feedback ? `
+                <div class="learning-detail">
+                    <strong>💬 Feedback:</strong> ${escapeHtml(interaction.user_feedback)}
+                </div>
+            ` : ''}
+
+            <div class="learning-proposed-fix">
+                <strong>💡 Proposed Fix:</strong> ${escapeHtml(learning.proposed_fix)}
+            </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 function renderInteractions(interactions) {

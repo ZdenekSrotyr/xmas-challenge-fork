@@ -180,6 +180,12 @@ body {
     color: #888;
 }
 
+.recent-item-stats {
+    font-size: 0.75rem;
+    font-family: monospace;
+    margin: 0.25rem 0;
+}
+
 .recent-item-file {
     font-size: 0.75rem;
     color: #667eea;
@@ -710,12 +716,27 @@ body {
     color: #666;
 }
 
+.learning-detail {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #f5f5f5;
+    border-left: 3px solid #667eea;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.learning-detail strong {
+    color: #333;
+}
+
 .learning-proposed-fix {
-    background: #f9fafb;
-    padding: 1rem;
+    background: #e8f5e9;
+    padding: 0.75rem;
     border-radius: 6px;
     margin-top: 0.75rem;
     font-size: 0.875rem;
+    border-left: 3px solid #4caf50;
     line-height: 1.6;
 }
 
