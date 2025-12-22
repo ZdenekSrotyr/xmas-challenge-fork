@@ -3,7 +3,7 @@
 > **⚠️ POC NOTICE**: This skill was automatically generated from documentation.
 > Source: `docs/keboola/`
 > Generator: `scripts/generators/claude_generator.py`
-> Generated: 2025-12-22T07:11:19.662392
+> Generated: 2025-12-22T09:57:23.810041
 
 ---
 
@@ -3216,7 +3216,7 @@ During local development, you don't have workspace access, so you use the **Stor
 
 **Environment Variables by Context**:
 
-```python
+```bash
 # WORKSPACE CONTEXT (Production)
 # Automatically set by Keboola platform:
 KBC_PROJECT_ID=6789           # Your project ID (used in table references)
@@ -3744,7 +3744,7 @@ def get_table_name():
 
 ```json
 {
-  "generated_at": "2025-12-22T07:11:19.662392",
+  "generated_at": "2025-12-22T09:57:23.810041",
   "source_path": "docs/keboola",
   "generator": "claude_generator.py v1.0"
 }
