@@ -269,6 +269,28 @@ Workspaces are temporary database environments (Snowflake, Redshift, or BigQuery
 | **Persistence** | Temporary (auto-deleted) | Permanent |
 | **Table Names** | `database.schema.table` | `bucket.table` |
 
+**Built-in SQL Editor (Snowflake Workspaces)**:
+
+Keboola provides a built-in SQL Editor for Snowflake workspaces, currently in public beta:
+
+- **Access**: Workspaces → Create Workspace → Snowflake SQL Workspace → SQL Editor tab
+- **Features**: 
+  - Query and explore data directly in Keboola UI
+  - Test SQL queries before using in transformations
+  - No need for external SQL clients
+- **Limitations**: 
+  - Snowflake workspaces only (not available for Redshift/BigQuery)
+  - Public beta - features may change
+- **Importance**: Becoming essential as direct Snowflake access for Multi-Tenant (MT) and Pay-As-You-Go (PAYG) customers is being deprecated by end of 2025
+
+**When to use SQL Editor vs external tools**:
+- **Use SQL Editor**: Quick queries, testing, exploration within Keboola
+- **Use external tools** (DBeaver, DataGrip): Complex development, if available for your plan
+
+References:
+- [SQL Editor Documentation](https://help.keboola.com/workspace/sql-editor/)
+- [SQL Editor Changelog](https://changelog.keboola.com/sql-editor-for-snowflake-sql-workspaces/)
+
 **SQL Editor (Snowflake Workspaces)**:
 
 Keboola has a built-in SQL Editor for Snowflake workspaces (currently in public beta):
@@ -298,6 +320,36 @@ if 'KBC_PROJECT_ID' in os.environ:
 # - Running outside Keboola (local development)
 # - Managing tables/buckets
 # - Orchestrating data flows
+else:
+    import requests
+    response = requests.post(
+        f"https://{stack_url}/v2/storage/tables/in.c-main.customers/export-async",
+        headers={"X-StorageApi-Token": token}
+    )
+```
+
+**When to Use What**:
+
+```python
+# Use WORKSPACE + SQL EDITOR when:
+# - Running inside Keboola workspace
+# - Testing queries before creating transformations
+# - Exploring data interactively in Keboola UI (Snowflake only)
+if 'KBC_PROJECT_ID' in os.environ:
+    # Option 1: Programmatic access (Data Apps, transformations)
+    conn = st.connection('snowflake', type='snowflake')
+    query = f'SELECT * FROM "{os.environ["KBC_PROJECT_ID"]}"."{"in.c-main"}"."{"customers"}"'
+    df = conn.query(query)
+    
+    # Option 2: Interactive access via SQL Editor (Snowflake workspaces)
+    # Access: Workspaces → Your Workspace → SQL Editor tab
+    # Run queries directly in UI, no code needed
+
+# Use STORAGE API when:
+# - Running outside Keboola (local development)
+# - Managing tables/buckets programmatically
+# - Orchestrating data flows
+# - Building custom components/extractors
 else:
     import requests
     response = requests.post(
