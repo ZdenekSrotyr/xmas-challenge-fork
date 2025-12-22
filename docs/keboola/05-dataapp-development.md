@@ -552,9 +552,12 @@ widget = st.text_input("Label", value=st.session_state.my_value)
 ## Resources
 
 - [Streamlit Documentation](https://docs.streamlit.io)
-- [Keboola Data Apps Guide](https://developers.keboola.com/extend/data-apps/)
+- [Keboola Data Apps Guide](https://help.keboola.com/components/data-apps/)
 - [Snowflake SQL Reference](https://docs.snowflake.com/en/sql-reference.html)
 
+## Table Name Helper
+
+```python
 def get_table_name():
     """Get fully qualified table name for current context.
     
@@ -585,3 +588,4 @@ def get_table_name():
         
         # Return: in.c-analysis.usage_data
         return f'{bucket}.{table}'
+```
