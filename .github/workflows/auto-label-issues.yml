@@ -1,0 +1,75 @@
+name: Auto-Label Issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Check and add auto-report label
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title.toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+
+            // Patterns that indicate this is a learning/auto-report issue
+            const autoReportPatterns = [
+              '[learning]',
+              'capture-learning',
+              'knowledge gap',
+              'documentation gap',
+              'missing documentation',
+              'incorrect documentation',
+              'outdated documentation',
+              'api error',
+              'discovered issue'
+            ];
+
+            // Check if any pattern matches
+            const shouldLabel = autoReportPatterns.some(pattern =>
+              title.includes(pattern) || body.includes(pattern)
+            );
+
+            if (shouldLabel) {
+              console.log('Auto-report pattern detected, adding label...');
+
+              // First ensure the label exists
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'auto-report'
+                });
+              } catch (e) {
+                if (e.status === 404) {
+                  // Create the label if it doesn't exist
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: 'auto-report',
+                    color: '7057ff',
+                    description: 'Automatically reported issue from learning capture'
+                  });
+                }
+              }
+
+              // Add the label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['auto-report']
+              });
+
+              console.log(`Added 'auto-report' label to issue #${issue.number}`);
+            } else {
+              console.log('No auto-report patterns detected');
+            }

@@ -16,7 +16,7 @@ When this command is invoked, create a GitHub issue to capture the learning:
 
 ```bash
 gh issue create \
-  --title "Learning: [Brief description of what was learned]" \
+  --title "[Learning] [Brief description of what was learned]" \
   --body "## Knowledge Gap Discovered
 
 **What was missing/incorrect:**
@@ -35,9 +35,10 @@ gh issue create \
 [Link to official docs, API response, or user confirmation]
 
 ---
-*Captured during session via /capture-learning*" \
-  --label "auto-report,learning"
+*Captured during session via /capture-learning*"
 ```
+
+> **Note:** Labels are added automatically by the `auto-label-issues` workflow based on the `[Learning]` prefix in the title. This works for all users, including non-collaborators.
 
 ## Examples
 
