@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      actions: write
 
     steps:
       - name: Check and add auto-report label
@@ -70,6 +71,19 @@ jobs:
               });
 
               console.log(`Added 'auto-report' label to issue #${issue.number}`);
+
+              // Trigger auto-triage workflow
+              console.log('Triggering auto-triage workflow...');
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'auto-triage.yml',
+                ref: 'main',
+                inputs: {
+                  issue_number: issue.number.toString()
+                }
+              });
+              console.log('Auto-triage workflow triggered');
             } else {
               console.log('No auto-report patterns detected');
             }

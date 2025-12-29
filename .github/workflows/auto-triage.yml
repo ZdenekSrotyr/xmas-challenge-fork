@@ -3,16 +3,25 @@ name: Auto-Triage Issues
 on:
   issues:
     types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to triage'
+        required: true
+        type: string
 
 # Only allow one triage workflow to run at a time to avoid race conditions
 concurrency:
-  group: auto-triage-${{ github.event.issue.number }}
+  group: auto-triage-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 
 jobs:
   triage:
-    # Only run if issue has the 'auto-report' label
-    if: contains(github.event.issue.labels.*.name, 'auto-report')
+    # Only run if issue has the 'auto-report' label (for issue events)
+    # Or if triggered manually via workflow_dispatch
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.issue.labels.*.name, 'auto-report')
     runs-on: ubuntu-latest
 
     permissions:
@@ -21,6 +30,43 @@ jobs:
       actions: write
 
     steps:
+      - name: Get issue data (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        id: get_issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt('${{ inputs.issue_number }}')
+            });
+            core.setOutput('title', issue.data.title);
+            core.setOutput('body', issue.data.body || '');
+            core.setOutput('number', issue.data.number);
+
+      - name: Set issue variables
+        id: issue_vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "issue_title<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ steps.get_issue.outputs.title }}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "issue_body<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ steps.get_issue.outputs.body }}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "issue_number=${{ steps.get_issue.outputs.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "issue_title<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "issue_body<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ github.event.issue.body }}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -51,10 +97,10 @@ jobs:
           # Initialize Claude client
           client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-          # Get issue details from GitHub context
-          issue_title = """${{ github.event.issue.title }}"""
-          issue_body = """${{ github.event.issue.body }}"""
-          issue_number = "${{ github.event.issue.number }}"
+          # Get issue details from previous step
+          issue_title = """${{ steps.issue_vars.outputs.issue_title }}"""
+          issue_body = """${{ steps.issue_vars.outputs.issue_body }}"""
+          issue_number = "${{ steps.issue_vars.outputs.issue_number }}"
 
           # Prepare the analysis prompt
           prompt = f"""Analyze this auto-reported issue from the Keboola AI knowledge base and provide a structured triage.
@@ -140,6 +186,7 @@ jobs:
           LABELS: ${{ steps.analyze.outputs.labels }}
           PRIORITY: ${{ steps.analyze.outputs.priority }}
           CONFIDENCE: ${{ steps.analyze.outputs.confidence }}
+          ISSUE_NUMBER: ${{ steps.issue_vars.outputs.issue_number }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -147,6 +194,7 @@ jobs:
             const labelsStr = process.env.LABELS;
             const priority = process.env.PRIORITY;
             const confidence = process.env.CONFIDENCE;
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER);
 
             // Parse labels
             const labels = labelsStr ? labelsStr.split(',').filter(l => l.trim()) : [];
@@ -160,7 +208,7 @@ jobs:
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               labels: labels
             });
 
@@ -175,6 +223,7 @@ jobs:
           SUMMARY: ${{ steps.analyze.outputs.summary }}
           PRIORITY: ${{ steps.analyze.outputs.priority }}
           REASONING: ${{ steps.analyze.outputs.reasoning }}
+          ISSUE_NUMBER: ${{ steps.issue_vars.outputs.issue_number }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -183,6 +232,7 @@ jobs:
             const summary = process.env.SUMMARY;
             const priority = process.env.PRIORITY;
             const reasoning = process.env.REASONING;
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER);
 
             // Create comment body
             let commentBody = `## Auto-Triage Results\n\n`;
@@ -207,7 +257,7 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               body: commentBody
             });
 
@@ -216,9 +266,11 @@ jobs:
         uses: actions/github-script@v7
         env:
           CATEGORY: ${{ steps.analyze.outputs.category }}
+          ISSUE_NUMBER: ${{ steps.issue_vars.outputs.issue_number }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER);
             // Trigger the propose-fix workflow
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
@@ -226,24 +278,27 @@ jobs:
               workflow_id: 'propose-fix.yml',
               ref: 'main',
               inputs: {
-                issue_number: context.issue.number.toString(),
+                issue_number: issueNumber.toString(),
                 category: process.env.CATEGORY
               }
             });
 
-            console.log(`Triggered propose-fix workflow for issue #${context.issue.number}`);
+            console.log(`Triggered propose-fix workflow for issue #${issueNumber}`);
 
       - name: Handle triage failure
         if: failure()
         uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.issue_vars.outputs.issue_number }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER);
             // Add failure comment
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               body: `:warning: Auto-triage failed. Please review manually.\n\nCheck the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`
             });
 
@@ -251,6 +306,6 @@ jobs:
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: issueNumber,
               labels: ['needs-review', 'triage-failed']
             });
